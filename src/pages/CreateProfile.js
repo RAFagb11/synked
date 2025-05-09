@@ -70,8 +70,9 @@ const CreateProfile = () => {
       
       // Update user document to mark profile as completed
       const userRef = doc(db, 'users', currentUser.uid);
-      await updateDoc(userRef, { profileCompleted: true });
-      
+      await updateDoc(doc(db, 'users', currentUser.uid), {
+        profileCompleted: true
+      });
       // Navigate to appropriate dashboard
       navigate(userType === 'student' ? '/student/dashboard' : '/company/dashboard');
     } catch (error) {

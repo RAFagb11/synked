@@ -315,7 +315,7 @@ const ProjectDetail = () => {
                     <button 
                       className="btn btn-primary"
                       style={{ flex: '1', padding: '15px' }}
-                      onClick={() => navigate('/company/dashboard')}
+                      onClick={() => navigate(`/company/project/${project.id}`)}
                     >
                       Manage Applications
                     </button>
