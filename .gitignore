@@ -64,6 +64,28 @@ node_modules/
 
 # dotenv environment variables file
 .env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
 
 # dataconnect generated files
 .dataconnect
+
+# Build directory - ADD THIS LINE
+/build/
+/dist/
+
+# IDE files - ADD THESE LINES
+.vscode/
+.idea/
+*.sublime-*
+.DS_Store
+
+# Generated files - ADD THESE LINES
+/asset-manifest.json
+/precache-manifest.*
+/service-worker.js
+*.map
+*.chunk.js
+*.chunk.css
