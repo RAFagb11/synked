@@ -6,8 +6,10 @@
   "main": "src/index.tsx",
   "dependencies": {
     "@firebasegen/default-connector": "file:dataconnect-generated/js/default-connector",
+    "canvas-confetti": "^1.9.3",
     "firebase": "^11.4.0",
     "react": "^19.0.0",
+    "react-confetti": "^6.4.0",
     "react-dom": "^19.0.0",
     "react-router": "^6.30.0",
     "react-router-dom": "^6.30.0",

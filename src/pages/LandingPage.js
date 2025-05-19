@@ -129,8 +129,8 @@ const LandingPage = () => {
         </div>
       </section>
 
-      {/* Success Stories Section - Changed ID from testimonials to success-stories */}
-      <section className="testimonials" id="success-stories">
+      {/* Success Stories Section */}
+      <section className="testimonials" id="testimonials">
         <div className="container">
           <div className="section-header">
             <div className="feature-badge">Testimonials</div>

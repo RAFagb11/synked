@@ -4,6 +4,7 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import PrivateRoute from './components/PrivateRoute';
 
+
 // Pages
 import LandingPage from './pages/LandingPage';
 import Login from './pages/Login';
@@ -17,6 +18,11 @@ import PostProject from './pages/PostProject';
 import StudentProjectPortal from './pages/StudentProjectPortal';
 import CompanyProjectManagement from './pages/CompanyProjectManagement';
 import NotFound from './pages/NotFound';
+import CompanyProjectView from './pages/CompanyProjectView.js';
+import ProjectAccepted from './pages/ProjectAccepted.js';
+import StudentProjectView from './pages/StudentProjectView.js';
+
+
 
 // New page imports
 import AboutUs from './pages/AboutUs';
@@ -96,6 +102,32 @@ function App() {
             element={
               <PrivateRoute requireUserType="company">
                 <PricingPlans />
+              </PrivateRoute>
+            } 
+          />
+          <Route 
+            path="/projects/:id/accepted" 
+            element={
+              <PrivateRoute>
+                <ProjectAccepted />
+              </PrivateRoute>
+            } 
+          />
+          
+          <Route 
+            path="/company/projects/:id" 
+            element={
+              <PrivateRoute>
+                <CompanyProjectView />
+              </PrivateRoute>
+            } 
+          />
+          
+          <Route 
+            path="/student/projects/:id" 
+            element={
+              <PrivateRoute>
+                <StudentProjectView />
               </PrivateRoute>
             } 
           />
@@ -225,6 +257,17 @@ export default App;
 
 // export default App;
 
+/*
+<Route 
+            path="/students/:id" 
+            element={
+              <PrivateRoute>
+                <StudentProfile />
+              </PrivateRoute>
+            } 
+          />
+
+*/
 
 
 

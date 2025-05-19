@@ -6,14 +6,14 @@ import { getStorage } from 'firebase/storage';
 
 // Replace with your actual Firebase config from Firebase Console
 const firebaseConfig = {
-  apiKey: "AIzaSyBGODqqdtwz8SFoyi3UQKsBJj-bEOZFo24",
-  authDomain: "synked-db.firebaseapp.com",
-  projectId: "synked-db",
-  storageBucket: "synked-db.firebasestorage.app",
-  messagingSenderId: "610714142518",
-  appId: "1:610714142518:web:fd1af537bb25288d491597",
-  measurementId: "G-C5EBLWSXQH"
+  apiKey: process.env.REACT_APP_FIREBASE_API_KEY,
+  authDomain: process.env.REACT_APP_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.REACT_APP_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.REACT_APP_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.REACT_APP_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.REACT_APP_FIREBASE_APP_ID
 };
+
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
