@@ -307,7 +307,7 @@ const Register = () => {
           padding: '40px',
           boxShadow: '0 10px 30px rgba(0,0,0,0.05)'
         }}>
-          <h2 style={{ textAlign: 'center', marginBottom: '30px' }}>Create Your SkillBridge Account</h2>
+          <h2 style={{ textAlign: 'center', marginBottom: '30px' }}>Create Your Synked Account</h2>
           
           {/* Progress indicator */}
           <div style={{ marginBottom: '30px' }}>

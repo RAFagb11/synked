@@ -46,19 +46,83 @@ const CompanyProjectManagement = () => {
         const projectData = { id: projectDoc.id, ...projectDoc.data() };
         setProject(projectData);
         
-        // Get enrolled students
         const enrolledStudentsIds = projectData.enrolledStudents || [];
-        
+
         if (enrolledStudentsIds.length > 0) {
           const studentsData = [];
           
           for (const studentId of enrolledStudentsIds) {
+            console.log("Fetching student with ID:", studentId);
+            
+            // Get student profile
             const studentDoc = await getDoc(doc(db, 'studentProfiles', studentId));
+            
+            // Get user document for email
+            let email = '';
+            try {
+              const userDoc = await getDoc(doc(db, 'users', studentId));
+              if (userDoc.exists()) {
+                email = userDoc.data().email || '';
+              }
+            } catch (error) {
+              console.error("Error fetching user email:", error);
+            }
+            
             if (studentDoc.exists()) {
-              studentsData.push({ id: studentDoc.id, ...studentDoc.data() });
+              const studentData = studentDoc.data();
+              console.log("Raw student data for", studentId, ":", studentData);
+              
+              // Also fetch active project data to get progress
+              let progress = 0;
+              try {
+                const activeProjectsQuery = query(
+                  collection(db, 'activeProjects'),
+                  where('studentId', '==', studentId),
+                  where('projectId', '==', projectId)
+                );
+                const activeProjectsSnapshot = await getDocs(activeProjectsQuery);
+                
+                if (!activeProjectsSnapshot.empty) {
+                  const activeProjectData = activeProjectsSnapshot.docs[0].data();
+                  progress = activeProjectData.progress || 0;
+                }
+              } catch (error) {
+                console.error("Error fetching active project data:", error);
+              }
+              
+              studentsData.push({
+                id: studentId,
+                fullName: studentData.fullName || 'Student',
+                displayName: studentData.fullName || 'Student', // Add display name for components that might use it
+                photoURL: studentData.photoURL || '',
+                email: email,
+                major: studentData.major || 'Not specified',
+                college: studentData.college || '',
+                year: studentData.year || 'Not specified',
+                bio: studentData.bio && studentData.bio !== '-' ? studentData.bio : 'No bio provided',
+                skills: studentData.skills || [],
+                progress: progress,
+                ...studentData  // Keep all original data
+              });
+            } else {
+              console.log("No student profile found for ID:", studentId);
+              // Add a placeholder record
+              studentsData.push({
+                id: studentId,
+                fullName: 'Student',
+                displayName: 'Student',
+                photoURL: '',
+                email: email,
+                major: 'Not specified',
+                college: '',
+                bio: 'No bio provided',
+                skills: [],
+                progress: 0
+              });
             }
           }
           
+          console.log("Final processed student data:", studentsData);
           setStudents(studentsData);
           
           // Set first student as active if none is selected
@@ -139,7 +203,7 @@ const CompanyProjectManagement = () => {
     if (projectId && currentUser) {
       fetchProjectData();
     }
-  }, [projectId, currentUser, activeStudent?.id]);
+  }, [projectId, currentUser]);
   
   // Fetch messages for a specific student
   const fetchMessages = async (studentId) => {
@@ -218,7 +282,7 @@ const CompanyProjectManagement = () => {
         userId: currentUser.uid,
         userType: 'company',
         activityType: 'message',
-        content: `sent a message to ${activeStudent.firstName} ${activeStudent.lastName}`,
+        content: `sent a message to ${activeStudent.fullName || 'Student'}`,
         timestamp: serverTimestamp()
       });
       
@@ -299,9 +363,11 @@ const CompanyProjectManagement = () => {
   // Accept student application
   const handleAcceptApplication = async (application) => {
     try {
-      // Update application status
+      // Update application status - ADD THE TWO KEY FIELDS HERE
       await updateDoc(doc(db, 'applications', application.id), {
         status: 'accepted',
+        acceptedAt: new Date().toISOString(), // ← ADD THIS - triggers modal
+        modalShown: false,                    // ← ADD THIS - ensures modal shows
         updatedAt: serverTimestamp()
       });
       
@@ -316,7 +382,7 @@ const CompanyProjectManagement = () => {
         userId: currentUser.uid,
         userType: 'company',
         activityType: 'enrollment',
-        content: `accepted ${application.studentProfile?.firstName} ${application.studentProfile?.lastName || 'student'}'s application`,
+        content: `accepted ${application.studentProfile?.fullName || 'student'}'s application`,
         timestamp: serverTimestamp()
       });
       
@@ -368,8 +434,13 @@ const CompanyProjectManagement = () => {
         
         setStudents(studentsData);
       }
+
+      // Optional: Show success message
+      alert(`${application.studentProfile?.fullName || 'Student'} has been accepted! They will see a congratulations modal when they visit their dashboard.`);
+      
     } catch (error) {
       console.error('Error accepting application:', error);
+      alert('Error accepting application. Please try again.');
     }
   };
   
@@ -649,7 +720,7 @@ const CompanyProjectManagement = () => {
                   {students.length}
                 </div>
                 <div style={{ marginBottom: '10px' }}>
-                  <strong>Active:</strong> {students.filter(s => true).length}
+                  <strong>Active:</strong> {students.length}
                 </div>
                 <button 
                   onClick={() => setActiveTab('students')}
@@ -745,7 +816,7 @@ const CompanyProjectManagement = () => {
                         >
                           <div>
                             <div style={{ fontWeight: '500', marginBottom: '5px' }}>
-                              {student ? `${student.firstName} ${student.lastName}` : 'Student'} - {deliverable?.title || 'Deliverable'}
+                              {student ? (student.fullName || 'Student') : 'Student'} - {deliverable?.title || 'Deliverable'}
                             </div>
                             <div style={{ fontSize: '14px', color: '#666' }}>
                               Submitted on {formatDate(submission.submittedAt)}
@@ -753,7 +824,7 @@ const CompanyProjectManagement = () => {
                           </div>
                           
                           <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                            <span className={`feature-badge ${getStatusClass(submission.status)}`}>
+                          <span className={`feature-badge ${getStatusClass(submission.status)}`}>
                               {submission.status}
                             </span>
                             <button 
@@ -805,27 +876,40 @@ const CompanyProjectManagement = () => {
                         }}
                         onClick={() => setActiveStudent(student)}
                       >
-                        <div style={{ 
-                          width: '40px',
-                          height: '40px',
-                          borderRadius: '50%',
-                          background: 'var(--primary)',
-                          color: 'white',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          fontSize: '16px',
-                          fontWeight: '500'
-                        }}>
-                          {student.firstName?.charAt(0) || 'S'}{student.lastName?.charAt(0) || ''}
-                        </div>
+                        {student.photoURL ? (
+                          <img 
+                            src={student.photoURL} 
+                            alt={student.fullName || 'Student'} 
+                            style={{ 
+                              width: '40px', 
+                              height: '40px', 
+                              borderRadius: '50%',
+                              objectFit: 'cover'
+                            }} 
+                          />
+                        ) : (
+                          <div style={{ 
+                            width: '40px',
+                            height: '40px',
+                            borderRadius: '50%',
+                            background: 'var(--primary)',
+                            color: 'white',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: '16px',
+                            fontWeight: '500'
+                          }}>
+                            {student.fullName ? student.fullName.charAt(0) : 'S'}
+                          </div>
+                        )}
                         
                         <div style={{ flex: '1' }}>
                           <div style={{ fontWeight: '500' }}>
-                            {student.firstName} {student.lastName}
+                            {student.fullName || 'Student'}
                           </div>
                           <div style={{ fontSize: '14px', color: '#666' }}>
-                            Progress: {calculateStudentProgress(student.id)}%
+                            Progress: {student.progress || calculateStudentProgress(student.id) || 0}%
                           </div>
                         </div>
                       </div>
@@ -841,30 +925,43 @@ const CompanyProjectManagement = () => {
                 <>
                   <div style={{ background: 'white', padding: '25px', borderRadius: '16px', boxShadow: '0 10px 30px rgba(0,0,0,0.05)', marginBottom: '30px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '20px', marginBottom: '20px' }}>
-                      <div style={{ 
-                        width: '60px',
-                        height: '60px',
-                        borderRadius: '50%',
-                        background: 'var(--primary)',
-                        color: 'white',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontSize: '24px',
-                        fontWeight: '500'
-                      }}>
-                        {activeStudent.firstName?.charAt(0) || 'S'}{activeStudent.lastName?.charAt(0) || ''}
-                      </div>
+                      {activeStudent.photoURL ? (
+                        <img 
+                          src={activeStudent.photoURL} 
+                          alt={activeStudent.fullName || 'Student'} 
+                          style={{ 
+                            width: '60px', 
+                            height: '60px', 
+                            borderRadius: '50%',
+                            objectFit: 'cover'
+                          }} 
+                        />
+                      ) : (
+                        <div style={{ 
+                          width: '60px',
+                          height: '60px',
+                          borderRadius: '50%',
+                          background: 'var(--primary)',
+                          color: 'white',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: '24px',
+                          fontWeight: '500'
+                        }}>
+                          {activeStudent.fullName ? activeStudent.fullName.charAt(0) : 'S'}
+                        </div>
+                      )}
                       
                       <div>
-                        <h3 style={{ marginBottom: '5px' }}>{activeStudent.firstName} {activeStudent.lastName}</h3>
-                        <div>{activeStudent.university || 'Student'}</div>
+                        <h3 style={{ marginBottom: '5px' }}>{activeStudent.fullName || 'Student'}</h3>
+                        <div>{activeStudent.college || activeStudent.university || 'Student'}</div>
                       </div>
                     </div>
                     
                     <div style={{ marginBottom: '20px' }}>
                       <div style={{ marginBottom: '10px' }}>
-                        <strong>Email:</strong> {activeStudent.email}
+                        <strong>Email:</strong> {activeStudent.email || 'Not provided'}
                       </div>
                       <div style={{ marginBottom: '10px' }}>
                         <strong>Major:</strong> {activeStudent.major || 'Not specified'}
@@ -873,7 +970,9 @@ const CompanyProjectManagement = () => {
                         <strong>Year:</strong> {activeStudent.year || 'Not specified'}
                       </div>
                       <div>
-                        <strong>Skills:</strong> {activeStudent.skills?.join(', ') || 'None listed'}
+                        <strong>Skills:</strong> {Array.isArray(activeStudent.skills) && activeStudent.skills.length > 0 
+                          ? activeStudent.skills.join(', ') 
+                          : 'None listed'}
                       </div>
                     </div>
                     
@@ -1285,13 +1384,12 @@ const CompanyProjectManagement = () => {
                         fontSize: '18px',
                         fontWeight: '500'
                       }}>
-                        {application.studentProfile?.firstName?.charAt(0) || 'S'}
-                        {application.studentProfile?.lastName?.charAt(0) || ''}
+                        {application.studentProfile?.fullName ? application.studentProfile.fullName.charAt(0) : 'S'}
                       </div>
                       
                       <div>
                         <h4 style={{ marginBottom: '5px' }}>
-                          {application.studentProfile?.firstName} {application.studentProfile?.lastName}
+                          {application.studentProfile?.fullName || 'Student'}
                         </h4>
                         <div style={{ fontSize: '14px', color: '#666' }}>
                           {application.studentProfile?.university || 'Student'} - {application.studentProfile?.major || 'Not specified'}

@@ -111,17 +111,10 @@ const ProjectApplications = () => {
       <div className="container" style={{ padding: '60px 0' }}>
         <div style={{ marginBottom: '30px' }}>
           <Link 
-            to={`/projects/${projectId}`} 
-            className="btn btn-outline"
-            style={{ marginRight: '15px' }}
-          >
-            &larr; Back to Project
-          </Link>
-          <Link 
             to="/company/dashboard"
             className="btn btn-outline"
           >
-            Dashboard
+            &larr; Dashboard
           </Link>
         </div>
         
@@ -134,7 +127,7 @@ const ProjectApplications = () => {
         ) : (
           <>
             <div className="section-header" style={{ marginBottom: '30px' }}>
-              <h2>Applications for {project?.title}</h2>
+              <h2>Project Applications</h2>
               <p>{applications.length} application{applications.length !== 1 ? 's' : ''} received</p>
             </div>
             

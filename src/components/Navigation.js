@@ -1,12 +1,12 @@
-// src/components/Navigation.js
 import React, { useContext } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { AuthContext } from '../contexts/AuthContext';
 
 const Navigation = () => {
   const { currentUser, logout, userType } = useContext(AuthContext);
   const navigate = useNavigate();
-
+  const location = useLocation(); // Add this to get current location
+  
   const handleLogout = async () => {
     try {
       await logout();
@@ -15,39 +15,47 @@ const Navigation = () => {
       console.error('Failed to log out', error);
     }
   };
-
+  
   const handleSectionLink = (sectionId, e) => {
-    if (window.location.pathname === '/') {
+    if (location.pathname === '/') {
       e.preventDefault();
       const element = document.getElementById(sectionId);
       if (element) {
         element.scrollIntoView({ behavior: 'smooth' });
       }
+    } else {
+      // If not on home page, navigate to home and then to section
+      navigate('/#' + sectionId);
     }
   };
-
+  
   const handleLogoClick = () => {
     // Navigate to home page
-    if (window.location.pathname !== '/') {
+    if (location.pathname !== '/') {
       navigate('/');
     } else {
       // Already on home page, scroll to top
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   };
-
+  
+  // Check if we're on a dashboard page
+  const isDashboardPage = location.pathname.includes('/dashboard');
+  
   return (
     <header>
       <div className="container">
         <nav>
-        <div 
+          <div
             className="logo"
             onClick={handleLogoClick}
             style={{ cursor: 'pointer' }}
           >
             Synked
           </div>
+          
           <ul className="nav-links">
+            {/* Always show these navigation links, regardless of page */}
             <li>
               <Link to="/" onClick={(e) => handleSectionLink('features', e)}>
                 Features
@@ -72,8 +80,8 @@ const Navigation = () => {
             {currentUser ? (
               <>
                 <li>
-                  <Link 
-                    to={userType === 'student' ? '/student/dashboard' : '/company/dashboard'} 
+                  <Link
+                    to={userType === 'student' ? '/student/dashboard' : '/company/dashboard'}
                     className="btn btn-outline"
                   >
                     Dashboard

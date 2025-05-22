@@ -1,39 +1,105 @@
 // src/pages/StudentDashboard.js
 import React, { useState, useEffect, useContext } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { AuthContext } from '../contexts/AuthContext';
-import { getStudentDashboardData } from '../services/dashboardService';
+import { collection, query, where, getDocs, orderBy, doc, getDoc, updateDoc } from 'firebase/firestore';
+import { db } from '../firebase';
 import Navigation from '../components/Navigation';
+import ProjectAcceptedModal from '../components/ProjectAcceptedModal';
 
 const StudentDashboard = () => {
-  const { currentUser, userProfile } = useContext(AuthContext);
+  const { currentUser } = useContext(AuthContext);
+  const navigate = useNavigate();
   
   const [applications, setApplications] = useState([]);
-  const [activeProjects, setActiveProjects] = useState([]);
+  const [activeProject, setActiveProject] = useState(null);
+  const [studentProfile, setStudentProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [activeTab, setActiveTab] = useState('projects');
+  const [showAcceptedModal, setShowAcceptedModal] = useState(false);
   
   useEffect(() => {
     const fetchDashboardData = async () => {
       try {
         setLoading(true);
         
-        const dashboardData = await getStudentDashboardData(currentUser.uid);
+        // Get student profile
+        const profileRef = doc(db, 'studentProfiles', currentUser.uid);
+        const profileDoc = await getDoc(profileRef);
+        if (profileDoc.exists()) {
+          setStudentProfile(profileDoc.data());
+        }
         
-        // Sort applications by date
-        const sortedApplications = dashboardData.applications.sort((a, b) => {
-          if (a.createdAt && b.createdAt) {
-            if (a.createdAt.seconds && b.createdAt.seconds) {
-              return b.createdAt.seconds - a.createdAt.seconds;
+        // Get applications
+        const applicationsQuery = query(
+          collection(db, 'applications'),
+          where('studentId', '==', currentUser.uid),
+          orderBy('appliedAt', 'desc')
+        );
+        
+        const applicationsSnapshot = await getDocs(applicationsQuery);
+        const applicationsData = applicationsSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        
+        setApplications(applicationsData);
+        
+        // Check for newly accepted applications (real implementation)
+        const checkForNewAcceptance = async () => {
+          const recentlyAccepted = applicationsData.find(app => 
+            app.status === 'accepted' && 
+            !app.modalShown &&
+            // Check if accepted in last 7 days to catch recent acceptances
+            app.acceptedAt && 
+            new Date() - new Date(app.acceptedAt) < 7 * 24 * 60 * 60 * 1000
+          );
+          
+          if (recentlyAccepted) {
+            // Get project details for the modal
+            const projectRef = doc(db, 'projects', recentlyAccepted.projectId);
+            const projectSnap = await getDoc(projectRef);
+            
+            if (projectSnap.exists()) {
+              const projectData = projectSnap.data();
+              setActiveProject({
+                id: recentlyAccepted.projectId,
+                ...projectData,
+                applicationId: recentlyAccepted.id
+              });
+              
+              // Show the modal
+              setShowAcceptedModal(true);
+              
+              // Mark modal as shown to prevent showing again
+              const applicationRef = doc(db, 'applications', recentlyAccepted.id);
+              await updateDoc(applicationRef, {
+                modalShown: true
+              });
             }
-            return new Date(b.createdAt) - new Date(a.createdAt);
           }
-          return 0;
-        });
+        };
         
-        setApplications(sortedApplications);
-        setActiveProjects(dashboardData.activeProjects);
+        // Get the current active project (accepted application)
+        const acceptedApplication = applicationsData.find(app => app.status === 'accepted');
+        
+        if (acceptedApplication) {
+          const projectRef = doc(db, 'projects', acceptedApplication.projectId);
+          const projectSnap = await getDoc(projectRef);
+          
+          if (projectSnap.exists()) {
+            const projectData = projectSnap.data();
+            setActiveProject({
+              id: acceptedApplication.projectId,
+              ...projectData,
+              applicationId: acceptedApplication.id
+            });
+          }
+        }
+        
+        // Check for new acceptances after loading data
+        await checkForNewAcceptance();
+        
         setLoading(false);
       } catch (error) {
         console.error('Error fetching dashboard data:', error);
@@ -78,141 +144,38 @@ const StudentDashboard = () => {
         return {};
     }
   };
+
+  const currentApplication = applications.length > 0 ? applications[0] : null;
   
-  const renderTabContent = () => {
-    if (loading) {
-      return (
-        <div style={{ textAlign: 'center', padding: '50px 0' }}>
-          Loading your dashboard...
-        </div>
-      );
-    }
-    
-    if (error) {
-      return (
-        <div style={{ textAlign: 'center', padding: '50px 0', color: 'var(--danger)' }}>
-          {error}
-        </div>
-      );
-    }
-    
-    if (activeTab === 'projects') {
-      return (
-        <div>
-          <div style={{ marginBottom: '30px' }}>
-            <h3 style={{ marginBottom: '20px' }}>Active Projects ({activeProjects.length})</h3>
-            
-            {activeProjects.length === 0 ? (
-              <div style={{ background: 'white', padding: '30px', borderRadius: '16px', boxShadow: '0 5px 15px rgba(0,0,0,0.05)', textAlign: 'center' }}>
-                <p style={{ marginBottom: '15px' }}>You don't have any active projects yet.</p>
-                <Link to="/projects" className="btn btn-primary">Browse Projects</Link>
-              </div>
-            ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px' }}>
-                {activeProjects.map(project => (
-                  <div key={project.id} className="feature-card">
-                    <div className="feature-badge">{project.category}</div>
-                    <h3>{project.title}</h3>
-                    <p>{project.description.slice(0, 100)}...</p>
-                    
-                    <div style={{ marginTop: '15px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
-                        <span style={{ fontWeight: '500' }}>Company:</span>
-                        <span>{project.companyName || 'Company'}</span>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <span style={{ fontWeight: '500' }}>Status:</span>
-                        <span style={{ color: 'var(--success)' }}>Active</span>
-                      </div>
-                    </div>
-                    
-                    <Link to={`/projects/${project.id}`} className="btn btn-primary" style={{ marginTop: '20px', display: 'block', textAlign: 'center' }}>
-                      View Project
-                    </Link>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      );
-    } else {
-      return (
-        <div>
-          <h3 style={{ marginBottom: '20px' }}>Your Applications ({applications.length})</h3>
-          
-          {applications.length === 0 ? (
-            <div style={{ background: 'white', padding: '30px', borderRadius: '16px', boxShadow: '0 5px 15px rgba(0,0,0,0.05)', textAlign: 'center' }}>
-              <p style={{ marginBottom: '15px' }}>You haven't applied to any projects yet.</p>
-              <Link to="/projects" className="btn btn-primary">Browse Projects</Link>
-            </div>
-          ) : (
-            <div>
-              {applications.map(application => (
-                <div 
-                  key={application.id} 
-                  style={{ 
-                    background: 'white', 
-                    padding: '25px', 
-                    borderRadius: '16px', 
-                    boxShadow: '0 5px 15px rgba(0,0,0,0.05)',
-                    marginBottom: '20px'
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-                    <h3>{application.projectTitle}</h3>
-                    <span 
-                      className="feature-badge"
-                      style={{
-                        ...getStatusClass(application.status),
-                        textTransform: 'capitalize'
-                      }}
-                    >
-                      {application.status}
-                    </span>
-                  </div>
-                  
-                  <div style={{ marginBottom: '15px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                      <span style={{ fontWeight: '500' }}>Applied On:</span>
-                      <span>{formatDate(application.createdAt || application.appliedAt)}</span>
-                    </div>
-                    
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ fontWeight: '500' }}>Your Availability:</span>
-                      <span>{application.availability}</span>
-                    </div>
-                  </div>
-                  
-                  {application.status === 'accepted' && (
-                    <div style={{ 
-                      padding: '15px', 
-                      borderRadius: '8px', 
-                      background: 'rgba(34, 197, 94, 0.1)',
-                      marginBottom: '20px'
-                    }}>
-                      <p style={{ color: 'var(--success)', fontWeight: '500', marginBottom: '5px' }}>
-                        Your application has been accepted!
-                      </p>
-                      <p>This project is now active in your dashboard.</p>
-                    </div>
-                  )}
-                  
-                  <Link 
-                    to={`/projects/${application.projectId}`} 
-                    className="btn btn-outline"
-                    style={{ display: 'block', textAlign: 'center' }}
-                  >
-                    Go to Project
-                  </Link>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      );
+  const handleModalContinue = () => {
+    setShowAcceptedModal(false);
+    // Navigate to the actual active project
+    if (activeProject) {
+      navigate(`/student/project/${activeProject.id}`);
     }
   };
+  
+  if (loading) {
+    return (
+      <>
+        <Navigation />
+        <div className="container" style={{ padding: '60px 0', textAlign: 'center' }}>
+          Loading your dashboard...
+        </div>
+      </>
+    );
+  }
+  
+  if (error) {
+    return (
+      <>
+        <Navigation />
+        <div className="container" style={{ padding: '60px 0', textAlign: 'center', color: 'var(--danger)' }}>
+          {error}
+        </div>
+      </>
+    );
+  }
   
   return (
     <>
@@ -221,28 +184,349 @@ const StudentDashboard = () => {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '40px' }}>
           <div>
             <h2>Student Dashboard</h2>
-            <p>Manage your projects and applications</p>
+            <p>Manage your project and application status</p>
           </div>
           
           <Link to="/projects" className="btn btn-primary">Browse Projects</Link>
         </div>
         
-        <div style={{ display: 'flex', gap: '20px', marginBottom: '30px' }}>
-          <button 
-            className={`btn ${activeTab === 'projects' ? 'btn-primary' : 'btn-outline'}`}
-            onClick={() => setActiveTab('projects')}
-          >
-            Active Projects ({activeProjects.length})
-          </button>
-          <button 
-            className={`btn ${activeTab === 'applications' ? 'btn-primary' : 'btn-outline'}`}
-            onClick={() => setActiveTab('applications')}
-          >
-            Applications ({applications.length})
-          </button>
+        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '30px' }}>
+          {/* Main Content */}
+          <div>
+            {/* Current Status Section */}
+            <div style={{ 
+              background: 'white', 
+              padding: '30px', 
+              borderRadius: '16px', 
+              boxShadow: '0 5px 15px rgba(0,0,0,0.05)',
+              marginBottom: '30px'
+            }}>
+              <h3 style={{ marginBottom: '20px' }}>Current Status</h3>
+              
+              {activeProject ? (
+                // Student has an active project
+                <div>
+                  <div style={{ 
+                    padding: '20px', 
+                    borderRadius: '12px', 
+                    background: 'rgba(34, 197, 94, 0.1)',
+                    marginBottom: '20px'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+                      <div style={{ 
+                        width: '12px', 
+                        height: '12px', 
+                        borderRadius: '50%', 
+                        background: 'var(--success)' 
+                      }}></div>
+                      <span style={{ color: 'var(--success)', fontWeight: '600' }}>Active Project</span>
+                    </div>
+                    <h4 style={{ marginBottom: '10px' }}>{activeProject.title}</h4>
+                    <p style={{ color: '#666', marginBottom: '15px' }}>{activeProject.description?.slice(0, 150)}...</p>
+                    
+                    <div style={{ display: 'flex', gap: '15px', marginBottom: '20px' }}>
+                      <div>
+                        <span style={{ fontWeight: '500' }}>Company:</span>
+                        <span style={{ marginLeft: '8px' }}>{activeProject.companyName || 'Company'}</span>
+                      </div>
+                      <div>
+                        <span style={{ fontWeight: '500' }}>Duration:</span>
+                        <span style={{ marginLeft: '8px' }}>{activeProject.duration}</span>
+                      </div>
+                    </div>
+                    
+                    <Link 
+                      to={`/student/project/${activeProject.id}`} 
+                      className="btn btn-primary"
+                      style={{ textDecoration: 'none' }}
+                    >
+                      Go to Project Portal
+                    </Link>
+                  </div>
+                </div>
+              ) : currentApplication ? (
+                // Student has a pending/rejected application
+                <div>
+                  <div style={{ 
+                    padding: '20px', 
+                    borderRadius: '12px', 
+                    background: getStatusClass(currentApplication.status).background,
+                    marginBottom: '20px'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
+                      <div style={{ 
+                        width: '12px', 
+                        height: '12px', 
+                        borderRadius: '50%', 
+                        background: getStatusClass(currentApplication.status).color
+                      }}></div>
+                      <span style={{ 
+                        color: getStatusClass(currentApplication.status).color, 
+                        fontWeight: '600',
+                        textTransform: 'capitalize'
+                      }}>
+                        Application {currentApplication.status}
+                      </span>
+                    </div>
+                    <h4 style={{ marginBottom: '10px' }}>{currentApplication.projectTitle}</h4>
+                    
+                    <div style={{ display: 'flex', gap: '15px', marginBottom: '20px' }}>
+                      <div>
+                        <span style={{ fontWeight: '500' }}>Applied:</span>
+                        <span style={{ marginLeft: '8px' }}>{formatDate(currentApplication.appliedAt)}</span>
+                      </div>
+                      <div>
+                        <span style={{ fontWeight: '500' }}>Availability:</span>
+                        <span style={{ marginLeft: '8px' }}>{currentApplication.availability}</span>
+                      </div>
+                    </div>
+                    
+                    {currentApplication.status === 'pending' && (
+                      <p style={{ color: '#666', fontSize: '14px', marginBottom: '15px' }}>
+                        Your application is being reviewed. You'll be notified once a decision is made.
+                      </p>
+                    )}
+                    
+                    {currentApplication.status === 'rejected' && (
+                      <p style={{ color: '#666', fontSize: '14px', marginBottom: '15px' }}>
+                        Unfortunately, your application was not selected. You can apply to other projects.
+                      </p>
+                    )}
+                    
+                    <Link 
+                      to={`/projects/${currentApplication.projectId}`} 
+                      className="btn btn-outline"
+                      style={{ textDecoration: 'none' }}
+                    >
+                      View Project Details
+                    </Link>
+                  </div>
+                </div>
+              ) : (
+                // Student has no applications
+                <div style={{ textAlign: 'center', padding: '40px 20px' }}>
+                  <div style={{ 
+                    width: '80px', 
+                    height: '80px', 
+                    borderRadius: '50%', 
+                    background: '#f5f5f5',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    margin: '0 auto 20px',
+                    fontSize: '32px'
+                  }}>
+                    📋
+                  </div>
+                  <h4 style={{ marginBottom: '10px' }}>No Active Applications</h4>
+                  <p style={{ color: '#666', marginBottom: '20px' }}>
+                    You haven't applied to any projects yet. Start by browsing available projects.
+                  </p>
+                  <Link to="/projects" className="btn btn-primary">Browse Projects</Link>
+                </div>
+              )}
+            </div>
+            
+            {/* Application History */}
+            {applications.length > 1 && (
+              <div style={{ 
+                background: 'white', 
+                padding: '30px', 
+                borderRadius: '16px', 
+                boxShadow: '0 5px 15px rgba(0,0,0,0.05)'
+              }}>
+                <h3 style={{ marginBottom: '20px' }}>Application History</h3>
+                
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                  {applications.slice(1).map(application => (
+                    <div 
+                      key={application.id}
+                      style={{ 
+                        padding: '20px',
+                        border: '1px solid #eee',
+                        borderRadius: '12px',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center'
+                      }}
+                    >
+                      <div>
+                        <h5 style={{ marginBottom: '5px' }}>{application.projectTitle}</h5>
+                        <p style={{ color: '#666', fontSize: '14px', margin: 0 }}>
+                          Applied on {formatDate(application.appliedAt)}
+                        </p>
+                      </div>
+                      
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                        <span 
+                          style={{
+                            ...getStatusClass(application.status),
+                            padding: '6px 12px',
+                            borderRadius: '20px',
+                            fontSize: '12px',
+                            fontWeight: '500',
+                            textTransform: 'capitalize'
+                          }}
+                        >
+                          {application.status}
+                        </span>
+                        
+                        <Link 
+                          to={`/projects/${application.projectId}`}
+                          style={{ 
+                            color: 'var(--primary)', 
+                            textDecoration: 'none',
+                            fontSize: '14px'
+                          }}
+                        >
+                          View Project
+                        </Link>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+          
+          {/* Sidebar */}
+          <div>
+            {/* Profile Section */}
+            <div style={{ 
+              background: 'white', 
+              padding: '25px', 
+              borderRadius: '16px', 
+              boxShadow: '0 5px 15px rgba(0,0,0,0.05)',
+              marginBottom: '25px'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', marginBottom: '20px' }}>
+                {studentProfile?.photoURL ? (
+                  <img 
+                    src={studentProfile.photoURL} 
+                    alt="Profile"
+                    style={{ 
+                      width: '60px',
+                      height: '60px',
+                      borderRadius: '50%',
+                      objectFit: 'cover',
+                      marginRight: '15px'
+                    }}
+                  />
+                ) : (
+                  <div style={{ 
+                    width: '60px',
+                    height: '60px',
+                    borderRadius: '50%',
+                    backgroundColor: '#f47b7b',
+                    color: 'white',
+                    display: 'flex',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    fontSize: '24px',
+                    marginRight: '15px',
+                    fontWeight: 'bold'
+                  }}>
+                    {studentProfile?.fullName ? studentProfile.fullName.charAt(0).toUpperCase() : 'S'}
+                  </div>
+                )}
+                
+                <div>
+                  <h4 style={{ marginBottom: '5px' }}>
+                    {studentProfile?.fullName || 'Complete Your Profile'}
+                  </h4>
+                  <p style={{ color: '#666', fontSize: '14px', margin: 0 }}>
+                    {studentProfile?.college || 'Add your university'}
+                  </p>
+                </div>
+              </div>
+              
+              <Link 
+                to="/student/profile" 
+                className="btn btn-outline"
+                style={{ 
+                  width: '100%', 
+                  textAlign: 'center',
+                  textDecoration: 'none',
+                  display: 'block',
+                  padding: '12px'
+                }}
+              >
+                View Profile
+              </Link>
+            </div>
+            
+            {/* Quick Stats */}
+            <div style={{ 
+              background: 'white', 
+              padding: '25px', 
+              borderRadius: '16px', 
+              boxShadow: '0 5px 15px rgba(0,0,0,0.05)'
+            }}>
+              <h4 style={{ marginBottom: '20px' }}>Quick Stats</h4>
+              
+              <div style={{ marginBottom: '15px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                  <span style={{ fontWeight: '500' }}>Applications Sent</span>
+                  <span style={{ 
+                    background: 'rgba(99, 102, 241, 0.1)',
+                    color: 'var(--primary)',
+                    padding: '4px 8px',
+                    borderRadius: '12px',
+                    fontSize: '12px'
+                  }}>
+                    {applications.length}
+                  </span>
+                </div>
+              </div>
+              
+              <div style={{ marginBottom: '15px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                  <span style={{ fontWeight: '500' }}>Active Projects</span>
+                  <span style={{ 
+                    background: activeProject ? 'rgba(34, 197, 94, 0.1)' : 'rgba(156, 163, 175, 0.1)',
+                    color: activeProject ? 'var(--success)' : '#6b7280',
+                    padding: '4px 8px',
+                    borderRadius: '12px',
+                    fontSize: '12px'
+                  }}>
+                    {activeProject ? '1' : '0'}
+                  </span>
+                </div>
+              </div>
+              
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ fontWeight: '500' }}>Profile Completeness</span>
+                  <span style={{ 
+                    background: 'rgba(251, 191, 36, 0.1)',
+                    color: 'var(--warning)',
+                    padding: '4px 8px',
+                    borderRadius: '12px',
+                    fontSize: '12px'
+                  }}>
+                    {studentProfile ? 
+                      `${Math.round(((studentProfile.fullName ? 1 : 0) + 
+                                   (studentProfile.college ? 1 : 0) + 
+                                   (studentProfile.major ? 1 : 0) + 
+                                   (studentProfile.bio ? 1 : 0) + 
+                                   (studentProfile.skills?.length > 0 ? 1 : 0)) / 5 * 100)}%`
+                      : '0%'
+                    }
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
         
-        {renderTabContent()}
+        {/* Project Accepted Modal */}
+        {showAcceptedModal && activeProject && (
+          <ProjectAcceptedModal 
+            project={activeProject}
+            onClose={() => setShowAcceptedModal(false)}
+            onContinue={handleModalContinue}
+          />
+        )}
       </div>
     </>
   );

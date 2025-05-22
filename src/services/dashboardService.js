@@ -93,13 +93,36 @@ import {
           const projectDoc = await getDoc(doc(db, 'projects', activeData.projectId));
           const projectTitle = projectDoc.exists() ? projectDoc.data().title : 'Unknown Project';
           
+          // Get user document to get email and any additional info
+          let email = '';
+          try {
+            const userDoc = await getDoc(doc(db, 'users', activeData.studentId));
+            email = userDoc.exists() ? userDoc.data().email : '';
+          } catch (error) {
+            console.error("Error fetching user email:", error);
+          }
+          
+          // Extract the student data
+          const studentData = studentDoc.data();
+          console.log("Student data from Firestore:", studentData);
+          
           activeStudents.push({
             id: activeData.studentId,
-            ...studentDoc.data(),
+            email: email,
+            // Use the name as stored in the database
+            fullName: studentData.fullName || 'Student',
+            university: studentData.college || '',
+            major: studentData.major || 'Not specified',
+            bio: studentData.bio && studentData.bio !== '-' ? studentData.bio : 'No bio provided',
+            skills: studentData.skills || [],
+            photoURL: studentData.photoURL || '',
+            ...studentData, // Keep all original data
             projectId: activeData.projectId,
             projectTitle,
-            activeProjectId: activeDoc.id // Reference to activeProjects document
+            activeProjectId: activeDoc.id
           });
+          
+          console.log("Final processed student:", activeStudents[activeStudents.length-1]);
         }
       }
       

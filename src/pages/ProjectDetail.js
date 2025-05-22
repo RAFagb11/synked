@@ -9,7 +9,15 @@ import Navigation from '../components/Navigation';
 import VideoRecorder from '../components/VideoRecorder';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { storage, db } from '../firebase';
-import { doc, updateDoc, arrayUnion } from 'firebase/firestore';
+import { 
+  doc, 
+  updateDoc, 
+  arrayUnion, 
+  collection, 
+  query, 
+  where, 
+  getDocs 
+} from 'firebase/firestore';
 
 const ProjectDetail = () => {
   const { id } = useParams();
@@ -30,6 +38,7 @@ const ProjectDetail = () => {
   const [videoError, setVideoError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [applicationSuccess, setApplicationSuccess] = useState(false);
+  const [hasExistingApplication, setHasExistingApplication] = useState(false);
   
   useEffect(() => {
     const fetchProjectData = async () => {
@@ -51,6 +60,22 @@ const ProjectDetail = () => {
     
     fetchProjectData();
   }, [id]);
+  
+  // Check for existing applications when component mounts
+  useEffect(() => {
+    const checkApplicationStatus = async () => {
+      if (currentUser && userType === 'student') {
+        try {
+          const hasExisting = await checkExistingApplications(currentUser.uid);
+          setHasExistingApplication(hasExisting);
+        } catch (error) {
+          console.error('Error checking application status:', error);
+        }
+      }
+    };
+    
+    checkApplicationStatus();
+  }, [currentUser, userType]);
   
   const handleVideoUpload = (e) => {
     const file = e.target.files[0];
@@ -87,6 +112,15 @@ const ProjectDetail = () => {
     try {
       setSubmitting(true);
       
+      // Check if student already has an application
+      const hasExisting = await checkExistingApplications(currentUser.uid);
+      
+      if (hasExisting) {
+        setError('You can only apply to one project at a time. Please withdraw your existing application first.');
+        setSubmitting(false);
+        return;
+      }
+      
       let finalVideoUrl = videoUrl;
       
       // Upload video file if one was selected (not recorded)
@@ -118,7 +152,7 @@ const ProjectDetail = () => {
       // Update project's applicants array
       const projectRef = doc(db, 'projects', id);
       await updateDoc(projectRef, {
-        applicants: arrayUnion(applicationData)
+        applicants: arrayUnion(currentUser.uid)
       });
       
       // Success state
@@ -147,7 +181,25 @@ const ProjectDetail = () => {
   // Check if user already applied
   const checkIfAlreadyApplied = () => {
     if (!currentUser || !project) return false;
-    return project.applicants?.some(app => app.studentId === currentUser.uid);
+    return project.applicants?.includes(currentUser.uid);
+  };
+
+  // Function to check if student already has pending applications
+  const checkExistingApplications = async (studentId) => {
+    try {
+      const applicationsQuery = query(
+        collection(db, 'applications'),
+        where('studentId', '==', studentId),
+        // Only consider pending or accepted applications as restrictions
+        where('status', 'in', ['pending', 'accepted'])
+      );
+      
+      const applicationsSnapshot = await getDocs(applicationsQuery);
+      return !applicationsSnapshot.empty; // Returns true if there are existing applications
+    } catch (error) {
+      console.error('Error checking existing applications:', error);
+      throw error;
+    }
   };
   
   // Check if this is the user's own project
@@ -207,6 +259,11 @@ const ProjectDetail = () => {
                         <h4 style={{ marginBottom: '10px' }}>Already Applied</h4>
                         <p>You have already applied to this project. Check your dashboard for application status.</p>
                       </div>
+                    ) : hasExistingApplication ? (
+                      <div style={{ padding: '20px', borderRadius: '8px', background: 'rgba(239, 68, 68, 0.1)', color: 'var(--danger)', marginBottom: '20px' }}>
+                        <h4 style={{ marginBottom: '10px' }}>Application Limit Reached</h4>
+                        <p>You can only apply to one project at a time. Please withdraw your existing application first.</p>
+                      </div>
                     ) : project.status !== 'open' ? (
                       <div style={{ padding: '20px', borderRadius: '8px', background: 'rgba(251, 191, 36, 0.1)', marginBottom: '20px' }}>
                         <h4 style={{ marginBottom: '10px' }}>Project Closed</h4>
@@ -222,7 +279,7 @@ const ProjectDetail = () => {
                       </button>
                     )}
                     
-                    {showApplicationForm && (
+                    {showApplicationForm && !hasExistingApplication && (
                       <div style={{ marginTop: '30px' }}>
                         <h3 style={{ marginBottom: '20px' }}>Submit Your Application</h3>
                         
