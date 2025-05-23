@@ -391,15 +391,34 @@ const ProjectDetail = () => {
                     width: '60px',
                     height: '60px',
                     borderRadius: '50%',
-                    background: 'var(--secondary)',
+                    background: company?.companyLogo ? 'transparent' : 'var(--secondary)',
                     color: 'white',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     fontSize: '24px',
-                    marginRight: '15px'
+                    marginRight: '15px',
+                    overflow: 'hidden'
                   }}>
-                    {company?.companyName ? company.companyName.charAt(0) : 'C'}
+                    {company?.companyLogo ? (
+                      <img 
+                        src={company.companyLogo} 
+                        alt={company.companyName || 'Company logo'} 
+                        style={{ 
+                          width: '100%', 
+                          height: '100%', 
+                          objectFit: 'cover' 
+                        }}
+                        onError={(e) => {
+                          // Fallback to letter if image fails to load
+                          e.target.style.display = 'none';
+                          e.target.parentNode.style.background = 'var(--secondary)';
+                          e.target.parentNode.innerHTML = company?.companyName ? company.companyName.charAt(0) : 'C';
+                        }}
+                      />
+                    ) : (
+                      company?.companyName ? company.companyName.charAt(0) : 'C'
+                    )}
                   </div>
                   <div>
                     <h4>{company?.companyName || 'Company'}</h4>

@@ -1,4 +1,4 @@
-// src/services/applicationService.js
+// src/services/applicationService.js - FIXED VERSION
 import { 
   collection, 
   addDoc, 
@@ -10,38 +10,124 @@ import {
   where, 
   serverTimestamp, 
   arrayUnion,
-  setDoc
+  setDoc,
+  orderBy
 } from 'firebase/firestore';
 import { db } from '../firebase';
 
-// Create a new application
+// =============================================================================
+// UTILITY FUNCTIONS
+// =============================================================================
+
+function generateApplicationId(projectId, studentId) {
+  const projectSlug = projectId.split('_')[1] || 'proj';
+  const studentSlug = studentId.split('_')[1] || 'stu';
+  const randomId = Math.random().toString(36).substring(2, 8);
+  return `app_${projectSlug}_${studentSlug}_${randomId}`;
+}
+
+// =============================================================================
+// APPLICATION SERVICES
+// =============================================================================
+
+/**
+ * Create a new application with structured ID
+ */
 export const createApplication = async (applicationData) => {
   try {
-    // Add to applications collection
-    const applicationRef = await addDoc(collection(db, 'applications'), {
-      ...applicationData,
-      status: 'pending',
-      createdAt: serverTimestamp()
-    });
+    console.log("Creating application:", applicationData);
     
-    // Add to project's applicants array
-    const projectRef = doc(db, 'projects', applicationData.projectId);
-    await updateDoc(projectRef, {
-      applicants: arrayUnion({
-        applicationId: applicationRef.id,
+    // Generate structured application ID
+    const applicationId = generateApplicationId(
+      applicationData.projectId, 
+      applicationData.studentId
+    );
+    
+    // Get project and student info for denormalization
+    const [projectDoc, studentDoc] = await Promise.all([
+      getDoc(doc(db, 'projects', applicationData.projectId)),
+      getDoc(doc(db, 'students', applicationData.studentId))
+    ]);
+    
+    const projectTitle = projectDoc.exists() ? 
+      projectDoc.data().basic?.title || 'Unknown Project' : 'Unknown Project';
+    
+    const studentName = studentDoc.exists() ? 
+      studentDoc.data().personal?.fullName || 'Unknown Student' : 'Unknown Student';
+    
+    const companyName = projectDoc.exists() ? 
+      projectDoc.data().company?.name || 'Unknown Company' : 'Unknown Company';
+    
+    const application = {
+      refs: {
+        projectId: applicationData.projectId,
         studentId: applicationData.studentId,
-        appliedAt: applicationData.appliedAt,
-        status: 'pending'
-      })
-    });
+        companyId: applicationData.companyId
+      },
+      info: {
+        projectTitle: projectTitle,
+        studentName: studentName,
+        companyName: companyName
+      },
+      content: {
+        coverLetter: applicationData.coverLetter?.trim() || "",
+        portfolioUrl: applicationData.portfolioUrl || "",
+        videoUrl: applicationData.videoUrl || "",
+        customAnswers: applicationData.customAnswers || [],
+        applicationAnswer: applicationData.applicationAnswer || ""
+      },
+      availability: {
+        startDate: applicationData.startDate || null,
+        hoursPerWeek: applicationData.hoursPerWeek || 20,
+        schedule: applicationData.availability || ""
+      },
+      status: {
+        current: "pending",
+        submittedAt: serverTimestamp(),
+        reviewedAt: null,
+        responseAt: null,
+        feedback: "",
+        notes: ""
+      },
+      meta: {
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        version: 1
+      }
+    };
+
+    // Save application
+    await setDoc(doc(db, 'applications', applicationId), application);
     
-    return applicationRef.id;
+    // Update project's application count
+    if (projectDoc.exists()) {
+      const currentCount = projectDoc.data().status?.applicationsCount || 0;
+      await updateDoc(doc(db, 'projects', applicationData.projectId), {
+        'status.applicationsCount': currentCount + 1,
+        'meta.updatedAt': serverTimestamp()
+      });
+    }
+    
+    // Update student's application count
+    if (studentDoc.exists()) {
+      const currentCount = studentDoc.data().metrics?.totalApplications || 0;
+      await updateDoc(doc(db, 'students', applicationData.studentId), {
+        'metrics.totalApplications': currentCount + 1,
+        'meta.updatedAt': serverTimestamp()
+      });
+    }
+    
+    console.log("Application created with ID:", applicationId);
+    return applicationId;
   } catch (error) {
+    console.error("Error creating application:", error);
     throw new Error('Failed to create application: ' + error.message);
   }
 };
 
-// Get application by ID
+/**
+ * Get application by ID
+ */
 export const getApplicationById = async (applicationId) => {
   try {
     const applicationDoc = await getDoc(doc(db, 'applications', applicationId));
@@ -56,172 +142,263 @@ export const getApplicationById = async (applicationId) => {
   }
 };
 
-// Get applications for a student
+/**
+ * Get applications for a student
+ */
 export const getStudentApplications = async (studentId) => {
   try {
     const applicationsQuery = query(
       collection(db, 'applications'),
-      where('studentId', '==', studentId)
+      where('refs.studentId', '==', studentId),
+      orderBy('meta.createdAt', 'desc')
     );
     
     const querySnapshot = await getDocs(applicationsQuery);
-    return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    return querySnapshot.docs.map(doc => ({ 
+      id: doc.id, 
+      ...doc.data() 
+    }));
   } catch (error) {
-    throw new Error('Failed to fetch applications: ' + error.message);
+    throw new Error('Failed to fetch student applications: ' + error.message);
   }
 };
 
-// Get applications for a project
+/**
+ * Get applications for a project
+ */
 export const getProjectApplications = async (projectId) => {
   try {
     const applicationsQuery = query(
       collection(db, 'applications'),
-      where('projectId', '==', projectId)
+      where('refs.projectId', '==', projectId),
+      orderBy('meta.createdAt', 'desc')
     );
     
     const querySnapshot = await getDocs(applicationsQuery);
-    return querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    return querySnapshot.docs.map(doc => ({ 
+      id: doc.id, 
+      ...doc.data() 
+    }));
   } catch (error) {
-    throw new Error('Failed to fetch applications: ' + error.message);
+    throw new Error('Failed to fetch project applications: ' + error.message);
   }
 };
 
-// Update application status
-export const updateApplicationStatus = async (applicationId, status) => {
+/**
+ * Get applications for a company
+ */
+export const getCompanyApplications = async (companyId) => {
   try {
-    const appRef = doc(db, 'applications', applicationId);
+    const applicationsQuery = query(
+      collection(db, 'applications'),
+      where('refs.companyId', '==', companyId),
+      orderBy('meta.createdAt', 'desc')
+    );
     
-    // Update application status
-    await updateDoc(appRef, { 
-      status,
-      updatedAt: serverTimestamp()
-    });
+    const querySnapshot = await getDocs(applicationsQuery);
+    return querySnapshot.docs.map(doc => ({ 
+      id: doc.id, 
+      ...doc.data() 
+    }));
+  } catch (error) {
+    throw new Error('Failed to fetch company applications: ' + error.message);
+  }
+};
+
+/**
+ * Update application status
+ */
+export const updateApplicationStatus = async (applicationId, status, feedback = "") => {
+  try {
+    const updates = {
+      'status.current': status,
+      'status.responseAt': serverTimestamp(),
+      'status.feedback': feedback,
+      'meta.updatedAt': serverTimestamp()
+    };
     
-    // If accepting, add to activeProjects and update relationships
+    // If accepting application
     if (status === 'accepted') {
       // Get application data
-      const appDoc = await getDoc(appRef);
+      const appDoc = await getDoc(doc(db, 'applications', applicationId));
+      if (!appDoc.exists()) {
+        throw new Error('Application not found');
+      }
+      
       const appData = appDoc.data();
       
-      // Create entries in activeProjects collection
-      await setDoc(doc(db, 'activeProjects', applicationId), {
-        projectId: appData.projectId,
-        studentId: appData.studentId,
-        companyId: appData.companyId,
-        startDate: serverTimestamp(),
-        status: 'active',
-        applicationId: applicationId
-      });
-      
-      // Update project document to show this student is active
-      const projectRef = doc(db, 'projects', appData.projectId);
+      // Add student to project's selected students
+      const projectRef = doc(db, 'projects', appData.refs.projectId);
       await updateDoc(projectRef, {
-        activeStudents: arrayUnion(appData.studentId),
-        status: 'in-progress'
+        'status.selectedStudents': arrayUnion(appData.refs.studentId),
+        'status.current': 'in-progress',
+        'meta.updatedAt': serverTimestamp()
       });
       
-      // Update user documents to reflect active status
-      const studentRef = doc(db, 'users', appData.studentId);
-      await updateDoc(studentRef, {
-        activeProjects: arrayUnion(appData.projectId)
-      });
+      // Update student's active projects count
+      const studentRef = doc(db, 'students', appData.refs.studentId);
+      const studentDoc = await getDoc(studentRef);
+      if (studentDoc.exists()) {
+        const currentActive = studentDoc.data().metrics?.activeProjects || 0;
+        await updateDoc(studentRef, {
+          'metrics.activeProjects': currentActive + 1,
+          'platform.lastActiveAt': serverTimestamp(),
+          'meta.updatedAt': serverTimestamp()
+        });
+      }
       
-      const companyRef = doc(db, 'users', appData.companyId);
-      await updateDoc(companyRef, {
-        activeStudents: arrayUnion(appData.studentId)
-      });
-      
-      // Also update the application in the project's applicants array
-      const projectDoc = await getDoc(projectRef);
-      const projectData = projectDoc.data();
-      const updatedApplicants = projectData.applicants.map(app => {
-        if (app.applicationId === applicationId || 
-            (app.studentId === appData.studentId && !app.applicationId)) {
-          return { ...app, status: 'accepted' };
-        }
-        return app;
-      });
-      
-      await updateDoc(projectRef, {
-        applicants: updatedApplicants
-      });
+      // Update company's students hired count
+      const companyRef = doc(db, 'companies', appData.refs.companyId);
+      const companyDoc = await getDoc(companyRef);
+      if (companyDoc.exists()) {
+        const currentHired = companyDoc.data().metrics?.totalStudentsHired || 0;
+        await updateDoc(companyRef, {
+          'metrics.totalStudentsHired': currentHired + 1,
+          'meta.updatedAt': serverTimestamp()
+        });
+      }
     }
     
+    // Update the application
+    await updateDoc(doc(db, 'applications', applicationId), updates);
+    console.log("Application status updated:", applicationId, status);
     return true;
   } catch (error) {
+    console.error("Error updating application status:", error);
     throw new Error('Failed to update application status: ' + error.message);
   }
 };
 
-// Accept an application
-export const acceptApplication = async (applicationId) => {
+/**
+ * Accept an application (wrapper for updateApplicationStatus)
+ */
+export const acceptApplication = async (applicationId, feedback = "") => {
   try {
-    // Update application status
-    await updateApplicationStatus(applicationId, 'accepted');
-    
-    // Get application data
-    const appDoc = await getDoc(doc(db, 'applications', applicationId));
-    const appData = appDoc.data();
-    
-    // Create notification for student
-    await addDoc(collection(db, 'notifications'), {
-      userId: appData.studentId,
-      type: 'application_accepted',
-      message: `Your application for "${appData.projectTitle}" has been accepted!`,
-      projectId: appData.projectId,
-      createdAt: serverTimestamp(),
-      read: false
-    });
-    
-    return true;
+    return await updateApplicationStatus(applicationId, 'accepted', feedback);
   } catch (error) {
     throw new Error('Failed to accept application: ' + error.message);
   }
 };
 
-// Reject an application
-export const rejectApplication = async (applicationId) => {
+/**
+ * Reject an application (wrapper for updateApplicationStatus)
+ */
+export const rejectApplication = async (applicationId, feedback = "") => {
   try {
-    // Update application status
-    const appRef = doc(db, 'applications', applicationId);
-    await updateDoc(appRef, { 
-      status: 'rejected',
-      updatedAt: serverTimestamp()
-    });
-    
-    // Get application data
-    const appDoc = await getDoc(appRef);
-    const appData = appDoc.data();
-    
-    // Update the application in the project's applicants array
-    const projectRef = doc(db, 'projects', appData.projectId);
-    const projectDoc = await getDoc(projectRef);
-    const projectData = projectDoc.data();
-    
-    const updatedApplicants = projectData.applicants.map(app => {
-      if (app.applicationId === applicationId || 
-          (app.studentId === appData.studentId && !app.applicationId)) {
-        return { ...app, status: 'rejected' };
-      }
-      return app;
-    });
-    
-    await updateDoc(projectRef, {
-      applicants: updatedApplicants
-    });
-    
-    // Create notification for student
-    await addDoc(collection(db, 'notifications'), {
-      userId: appData.studentId,
-      type: 'application_rejected',
-      message: `Your application for "${appData.projectTitle}" has been declined.`,
-      projectId: appData.projectId,
-      createdAt: serverTimestamp(),
-      read: false
-    });
-    
-    return true;
+    return await updateApplicationStatus(applicationId, 'rejected', feedback);
   } catch (error) {
     throw new Error('Failed to reject application: ' + error.message);
+  }
+};
+
+/**
+ * Withdraw an application (student action)
+ */
+export const withdrawApplication = async (applicationId) => {
+  try {
+    const updates = {
+      'status.current': 'withdrawn',
+      'status.responseAt': serverTimestamp(),
+      'meta.updatedAt': serverTimestamp()
+    };
+    
+    await updateDoc(doc(db, 'applications', applicationId), updates);
+    console.log("Application withdrawn:", applicationId);
+    return true;
+  } catch (error) {
+    console.error("Error withdrawing application:", error);
+    throw new Error('Failed to withdraw application: ' + error.message);
+  }
+};
+
+/**
+ * Get pending applications for a project
+ */
+export const getPendingApplications = async (projectId) => {
+  try {
+    const applicationsQuery = query(
+      collection(db, 'applications'),
+      where('refs.projectId', '==', projectId),
+      where('status.current', '==', 'pending'),
+      orderBy('meta.createdAt', 'desc')
+    );
+    
+    const querySnapshot = await getDocs(applicationsQuery);
+    return querySnapshot.docs.map(doc => ({ 
+      id: doc.id, 
+      ...doc.data() 
+    }));
+  } catch (error) {
+    throw new Error('Failed to fetch pending applications: ' + error.message);
+  }
+};
+
+/**
+ * Check if student has already applied to project
+ */
+export const hasStudentApplied = async (projectId, studentId) => {
+  try {
+    const applicationsQuery = query(
+      collection(db, 'applications'),
+      where('refs.projectId', '==', projectId),
+      where('refs.studentId', '==', studentId)
+    );
+    
+    const querySnapshot = await getDocs(applicationsQuery);
+    return !querySnapshot.empty;
+  } catch (error) {
+    console.error("Error checking if student applied:", error);
+    return false; // Default to false if error
+  }
+};
+
+/**
+ * Get application statistics for a project
+ */
+export const getProjectApplicationStats = async (projectId) => {
+  try {
+    const applicationsQuery = query(
+      collection(db, 'applications'),
+      where('refs.projectId', '==', projectId)
+    );
+    
+    const querySnapshot = await getDocs(applicationsQuery);
+    const applications = querySnapshot.docs.map(doc => doc.data());
+    
+    const stats = {
+      total: applications.length,
+      pending: applications.filter(app => app.status.current === 'pending').length,
+      accepted: applications.filter(app => app.status.current === 'accepted').length,
+      rejected: applications.filter(app => app.status.current === 'rejected').length,
+      withdrawn: applications.filter(app => app.status.current === 'withdrawn').length
+    };
+    
+    return stats;
+  } catch (error) {
+    throw new Error('Failed to get application statistics: ' + error.message);
+  }
+};
+
+/**
+ * Get student's application for a specific project
+ */
+export const getStudentProjectApplication = async (projectId, studentId) => {
+  try {
+    const applicationsQuery = query(
+      collection(db, 'applications'),
+      where('refs.projectId', '==', projectId),
+      where('refs.studentId', '==', studentId)
+    );
+    
+    const querySnapshot = await getDocs(applicationsQuery);
+    
+    if (querySnapshot.empty) {
+      return null;
+    }
+    
+    const doc = querySnapshot.docs[0];
+    return { id: doc.id, ...doc.data() };
+  } catch (error) {
+    throw new Error('Failed to fetch student application: ' + error.message);
   }
 };

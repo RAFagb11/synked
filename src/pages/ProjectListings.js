@@ -125,7 +125,11 @@ const ProjectListings = () => {
             No projects found. Please try a different filter or search term.
           </div>
         ) : (
-          <div className="feature-grid">
+          <div style={{ 
+            display: 'grid', 
+            gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 350px))', 
+            gap: '30px'
+          }}>
             {projects.map(project => (
               <ProjectCard key={project.id} project={project} />
             ))}

@@ -1,4 +1,4 @@
-// src/pages/CompanyProjectManagement.js
+// src/pages/CompanyProjectManagement.js - FIXED VERSION
 import React, { useState, useEffect, useContext } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { AuthContext } from '../contexts/AuthContext';
@@ -710,7 +710,7 @@ const CompanyProjectManagement = () => {
                   <strong>Duration:</strong> {project?.duration}
                 </div>
                 <div>
-                  <strong>Compensation:</strong> {project?.isExperienceOnly ? 'Experience Only' : `${project?.compensation}`}
+                  <strong>Compensation:</strong> {project?.isExperienceOnly ? 'Experience Only' : `$${project?.compensation}`}
                 </div>
               </div>
               

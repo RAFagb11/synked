@@ -1,5 +1,5 @@
-// src/pages/Register.js - COMPLETE FILE
-import React, { useState } from 'react';
+// src/pages/Register.js - Fixed navigation logic
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { setDoc, doc } from 'firebase/firestore';
@@ -10,11 +10,15 @@ import Navigation from '../components/Navigation';
 const Register = () => {
   const navigate = useNavigate();
   
+  // Get user type from URL parameters
+  const urlParams = new URLSearchParams(window.location.search);
+  const userTypeFromUrl = urlParams.get('type');
+  
   // Form states
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [userType, setUserType] = useState('student');
+  const [userType] = useState(userTypeFromUrl || 'student'); // Fixed userType, no setter
   const [fullName, setFullName] = useState('');
   const [college, setCollege] = useState('');
   const [major, setMajor] = useState('');
@@ -106,7 +110,13 @@ const Register = () => {
     'Other'
   ];
   
-  // Handle file selection for profile photo
+  // Add validation for user type on component mount
+  useEffect(() => {
+    if (!userTypeFromUrl || (userTypeFromUrl !== 'student' && userTypeFromUrl !== 'company')) {
+      // If no valid user type in URL, redirect to login or show error
+      navigate('/login');
+    }
+  }, [userTypeFromUrl, navigate]);
   const handlePhotoChange = (e) => {
     if (e.target.files[0]) {
       setProfilePhoto(e.target.files[0]);
@@ -226,40 +236,51 @@ const Register = () => {
       setLoading(true);
       setError('');
       
+      console.log('Creating account with user type:', userType);
+      
       // Create user account
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
+      
+      console.log('User created successfully:', user.uid);
       
       let photoURL = null;
       let logoURL = null;
       
       // Upload profile photo for students
       if (userType === 'student' && profilePhoto) {
+        console.log('Uploading profile photo...');
         const photoRef = ref(storage, `profilePhotos/${user.uid}`);
         await uploadBytes(photoRef, profilePhoto);
         photoURL = await getDownloadURL(photoRef);
+        console.log('Profile photo uploaded successfully');
       }
       
       // Upload company logo for companies
       if (userType === 'company' && companyLogo) {
+        console.log('Uploading company logo...');
         const logoRef = ref(storage, `companyLogos/${user.uid}`);
         await uploadBytes(logoRef, companyLogo);
         logoURL = await getDownloadURL(logoRef);
+        console.log('Company logo uploaded successfully');
       }
       
       // Store user data in Firestore
+      console.log('Creating user document with userType:', userType);
       await setDoc(doc(db, 'users', user.uid), {
         email,
         userType,
         createdAt: new Date(),
         profileCompleted: true
       });
+      console.log('User document created successfully');
       
       // Store profile data based on user type
       if (userType === 'student') {
         const finalCollege = college === 'Other' ? otherCollege : college;
         const finalMajor = major === 'Other' ? otherMajor : major;
         
+        console.log('Creating student profile...');
         await setDoc(doc(db, 'studentProfiles', user.uid), {
           fullName,
           college: finalCollege,
@@ -269,10 +290,12 @@ const Register = () => {
           skills: [],
           resume: null,
           portfolio: null,
-          activeProjects: 0, // Track number of active projects
+          activeProjects: 0,
           completedProjects: 0
         });
+        console.log('Student profile created successfully');
       } else {
+        console.log('Creating company profile...');
         await setDoc(doc(db, 'companyProfiles', user.uid), {
           companyName,
           industry,
@@ -282,14 +305,20 @@ const Register = () => {
           location: '',
           companySize: ''
         });
+        console.log('Company profile created successfully');
       }
       
-      // Navigate to dashboard
-      if (userType === 'student') {
-        navigate('/student/dashboard');
-      } else {
-        navigate('/company/dashboard');
-      }
+      console.log('Navigating to dashboard for userType:', userType);
+      
+      // Use a timeout to ensure state updates complete before navigation
+      setTimeout(() => {
+        if (userType === 'student') {
+          navigate('/student/dashboard', { replace: true });
+        } else {
+          navigate('/company/dashboard', { replace: true });
+        }
+      }, 1000); // 1 second delay to let Firebase state settle
+      
     } catch (error) {
       console.error('Error creating account:', error);
       setError('Failed to create account: ' + error.message);
@@ -400,46 +429,20 @@ const Register = () => {
               <div>
                 <div style={{ marginBottom: '20px' }}>
                   <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>Account Type</label>
-                  <div style={{ display: 'flex', gap: '20px' }}>
-                    <label style={{ 
-                      display: 'flex', 
-                      alignItems: 'center', 
-                      cursor: 'pointer',
-                      padding: '10px 15px',
-                      borderRadius: '8px',
-                      border: userType === 'student' ? '2px solid var(--primary)' : '2px solid #eee',
-                      backgroundColor: userType === 'student' ? 'rgba(108, 99, 255, 0.05)' : 'transparent'
-                    }}>
-                      <input
-                        type="radio"
-                        name="userType"
-                        value="student"
-                        checked={userType === 'student'}
-                        onChange={() => setUserType('student')}
-                        style={{ marginRight: '8px' }}
-                      />
-                      Student
-                    </label>
-                    <label style={{ 
-                      display: 'flex', 
-                      alignItems: 'center', 
-                      cursor: 'pointer',
-                      padding: '10px 15px',
-                      borderRadius: '8px',
-                      border: userType === 'company' ? '2px solid var(--primary)' : '2px solid #eee',
-                      backgroundColor: userType === 'company' ? 'rgba(108, 99, 255, 0.05)' : 'transparent'
-                    }}>
-                      <input
-                        type="radio"
-                        name="userType"
-                        value="company"
-                        checked={userType === 'company'}
-                        onChange={() => setUserType('company')}
-                        style={{ marginRight: '8px' }}
-                      />
-                      Company
-                    </label>
+                  <div style={{ 
+                    padding: '15px', 
+                    borderRadius: '8px',
+                    border: '2px solid var(--primary)',
+                    backgroundColor: 'rgba(108, 99, 255, 0.05)',
+                    textAlign: 'center'
+                  }}>
+                    <span style={{ fontSize: '18px', fontWeight: '600', color: 'var(--primary)' }}>
+                      {userType === 'student' ? '🎓 Student Account' : '🏢 Company Account'}
+                    </span>
                   </div>
+                  <p style={{ fontSize: '14px', color: '#666', marginTop: '8px', textAlign: 'center' }}>
+                    Creating a {userType} account
+                  </p>
                 </div>
                 
                 <div style={{ marginBottom: '20px' }}>
@@ -854,6 +857,14 @@ const Register = () => {
           
           <div style={{ marginTop: '30px', textAlign: 'center', borderTop: '1px solid #eee', paddingTop: '20px' }}>
             Already have an account? <Link to="/login" style={{ color: 'var(--primary)', textDecoration: 'none' }}>Log In</Link>
+            <div style={{ marginTop: '10px' }}>
+              <Link 
+                to={`/register?type=${userType === 'student' ? 'company' : 'student'}`} 
+                style={{ color: 'var(--primary)', textDecoration: 'none', fontSize: '14px' }}
+              >
+                Want to register as a {userType === 'student' ? 'company' : 'student'} instead?
+              </Link>
+            </div>
           </div>
         </div>
       </div>

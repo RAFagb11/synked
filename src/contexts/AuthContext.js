@@ -1,167 +1,138 @@
-// src/contexts/AuthContext.js
-import React, { useEffect, useState, createContext } from 'react';
+// src/contexts/AuthContext.js - Fixed to prevent infinite loops
+import React, { createContext, useContext, useState, useEffect } from 'react';
 import { 
-  createUserWithEmailAndPassword,
-  signInWithEmailAndPassword,
-  signOut,
-  onAuthStateChanged,
-  sendPasswordResetEmail
+  createUserWithEmailAndPassword, 
+  signInWithEmailAndPassword, 
+  signOut, 
+  onAuthStateChanged 
 } from 'firebase/auth';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, db } from '../firebase';
-import { doc, setDoc, getDoc } from 'firebase/firestore';
 
-export const AuthContext = createContext();
+const AuthContext = createContext();
 
-export const AuthProvider = ({ children }) => {
+export function useAuth() {
+  return useContext(AuthContext);
+}
+
+export function AuthProvider({ children }) {
   const [currentUser, setCurrentUser] = useState(null);
   const [userType, setUserType] = useState(null);
-  const [userProfile, setUserProfile] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [initializing, setInitializing] = useState(true);
 
-  // Sign up function
-  const signup = async (email, password, type) => {
-    console.log("Signing up:", email, type);
+  async function register(email, password, userType) {
+    const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+    
+    // Create user document in Firestore
+    await setDoc(doc(db, 'users', userCredential.user.uid), {
+      email: userCredential.user.email,
+      userType: userType,
+      createdAt: new Date(),
+      profileCompleted: false
+    });
+    
+    // Set userType immediately to prevent the need for refetch
+    setUserType(userType);
+    
+    return userCredential;
+  }
+
+  async function login(email, password) {
+    return signInWithEmailAndPassword(auth, email, password);
+  }
+
+  function logout() {
+    setUserType(null);
+    return signOut(auth);
+  }
+
+  // Function to fetch user type with retry logic
+  const fetchUserType = async (user, retryCount = 0) => {
+    const maxRetries = 3;
+    const retryDelay = 1000; // 1 second
     
     try {
-      // Create user in Firebase Auth
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      const user = userCredential.user;
-      
-      console.log("User created:", user.uid);
-      
-      // Store user type in Firestore
-      await setDoc(doc(db, 'users', user.uid), {
-        email,
-        userType: type,
-        createdAt: new Date().toISOString(),
-        profileCompleted: false
-      });
-      
-      setUserType(type);
-      return user;
-    } catch (error) {
-      console.error("Signup error:", error);
-      throw error;
-    }
-  };
-
-  // Log in function
-  const login = async (email, password) => {
-    console.log("Logging in:", email);
-    try {
-      const result = await signInWithEmailAndPassword(auth, email, password);
-      console.log("Login successful", result.user.uid);
-      return result;
-    } catch (error) {
-      console.error("Login error:", error);
-      throw error;
-    }
-  };
-
-  // Log out function
-  const logout = async () => {
-    console.log("Logging out");
-    try {
-      const result = await signOut(auth);
-      // Clear user state
-      setCurrentUser(null);
-      setUserType(null);
-      setUserProfile(null);
-      return result;
-    } catch (error) {
-      console.error("Logout error:", error);
-      throw error;
-    }
-  };
-
-  // Reset password function
-  const resetPassword = async (email) => {
-    try {
-      return await sendPasswordResetEmail(auth, email);
-    } catch (error) {
-      console.error("Reset password error:", error);
-      throw error;
-    }
-  };
-
-  // Fetch user data from Firestore
-  const fetchUserData = async (uid) => {
-    console.log("Fetching user data for:", uid);
-    try {
-      const userDoc = await getDoc(doc(db, 'users', uid));
+      console.log('Getting user type for UID:', user.uid);
+      const userDoc = await getDoc(doc(db, 'users', user.uid));
       
       if (userDoc.exists()) {
         const userData = userDoc.data();
-        console.log("User data found:", userData);
+        console.log('User document found:', userData);
         setUserType(userData.userType);
+        return userData.userType;
+      } else {
+        console.log('No user document found for UID:', user.uid);
         
-        // Fetch profile data if profile is completed
-        if (userData.profileCompleted) {
-          const profileRef = doc(db, `${userData.userType}Profiles`, uid);
-          const profileDoc = await getDoc(profileRef);
-          
-          if (profileDoc.exists()) {
-            setUserProfile(profileDoc.data());
-            console.log("User profile loaded:", profileDoc.data());
-          } else {
-            console.log("Profile document exists but no data found");
-          }
-        } else {
-          console.log("Profile not completed yet");
+        // If document doesn't exist and we have retries left, wait and try again
+        if (retryCount < maxRetries) {
+          console.log(`Retrying in ${retryDelay}ms... (attempt ${retryCount + 1}/${maxRetries})`);
+          setTimeout(() => {
+            fetchUserType(user, retryCount + 1);
+          }, retryDelay);
+          return;
         }
         
-        return userData;
-      } else {
-        console.log("No user data found");
+        // After all retries, set to null
+        setUserType(null);
+        return null;
+      }
+    } catch (error) {
+      console.error('Error fetching user data:', error);
+      
+      // Retry on error if retries left
+      if (retryCount < maxRetries) {
+        console.log(`Retrying after error... (attempt ${retryCount + 1}/${maxRetries})`);
+        setTimeout(() => {
+          fetchUserType(user, retryCount + 1);
+        }, retryDelay);
+        return;
       }
       
-      return null;
-    } catch (error) {
-      console.error("Error fetching user data:", error);
+      setUserType(null);
       return null;
     }
   };
 
-  // Listen for auth state changes
   useEffect(() => {
-    console.log("Setting up auth state listener");
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      console.log("Auth state changed:", user?.uid);
-      setCurrentUser(user);
+      console.log('Auth state changed:', user ? user.uid : 'No user');
       
       if (user) {
-        try {
-          await fetchUserData(user.uid);
-        } catch (error) {
-          console.error("Error in fetchUserData during auth state change:", error);
+        setCurrentUser(user);
+        
+        // Only fetch user type if we don't already have it
+        if (!userType) {
+          await fetchUserType(user);
         }
       } else {
+        setCurrentUser(null);
         setUserType(null);
-        setUserProfile(null);
       }
       
+      if (initializing) {
+        setInitializing(false);
+      }
       setLoading(false);
     });
 
     return unsubscribe;
-  }, []);
+  }, [userType, initializing]); // Add userType to dependencies but only fetch if null
 
   const value = {
     currentUser,
     userType,
-    userProfile,
-    signup,
+    register,
     login,
     logout,
-    resetPassword,
-    fetchUserData
+    loading: loading || initializing
   };
 
   return (
     <AuthContext.Provider value={value}>
-      {!loading && children}
+      {!loading && !initializing && children}
     </AuthContext.Provider>
   );
-};
+}
 
-export default AuthContext;
+export { AuthContext };

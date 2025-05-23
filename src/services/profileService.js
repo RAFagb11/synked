@@ -9,8 +9,6 @@ import {
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { db, storage } from "../firebase";
 
-
-
 /**
  * Create or update a student profile
  * @param {string} userId - User ID
@@ -66,38 +64,49 @@ export const createCompanyProfile = async (userId, profileData) => {
 /**
  * Get a student profile
  * @param {string} userId - User ID
- * @returns {Promise<Object>} - Student profile data
+ * @returns {Promise<Object|null>} - Student profile data or null if not found
  */
 export const getStudentProfile = async (userId) => {
   try {
+    console.log('🔍 DEBUG getStudentProfile - Fetching for userId:', userId);
     const profileDoc = await getDoc(doc(db, "studentProfiles", userId));
 
     if (!profileDoc.exists()) {
-      throw new Error("Student profile not found");
+      console.log(`Student profile not found for user: ${userId}`);
+      return null; // Return null instead of throwing error
     }
 
     return profileDoc.data();
   } catch (error) {
-    throw new Error("Failed to fetch student profile: " + error.message);
+    console.error("Error fetching student profile:", error);
+    return null; // Return null on error instead of throwing
   }
 };
 
 /**
  * Get a company profile
  * @param {string} userId - User ID
- * @returns {Promise<Object>} - Company profile data
+ * @returns {Promise<Object|null>} - Company profile data or null if not found
  */
 export const getCompanyProfile = async (userId) => {
   try {
+    console.log('🔍 DEBUG getCompanyProfile - Fetching for userId:', userId);
+    console.log('🔍 DEBUG getCompanyProfile - Collection: companyProfiles');
+    
     const profileDoc = await getDoc(doc(db, "companyProfiles", userId));
+    console.log('🔍 DEBUG getCompanyProfile - Document exists:', profileDoc.exists());
 
     if (!profileDoc.exists()) {
-      throw new Error("Company profile not found");
+      console.log(`Company profile not found for user: ${userId}`);
+      return null; // Return null instead of throwing error
     }
 
-    return profileDoc.data();
+    const data = profileDoc.data();
+    console.log('🔍 DEBUG getCompanyProfile - Data retrieved:', data);
+    return data;
   } catch (error) {
-    throw new Error("Failed to fetch company profile: " + error.message);
+    console.error("Error fetching company profile:", error);
+    return null; // Return null on error instead of throwing
   }
 };
 
@@ -169,4 +178,3 @@ export const updateCompanyProfile = async (userId, updateData) => {
     throw new Error("Failed to update company profile: " + error.message);
   }
 };
-
