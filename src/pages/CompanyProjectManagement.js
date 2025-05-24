@@ -1,10 +1,36 @@
-// src/pages/CompanyProjectManagement.js - FIXED VERSION
+// src/pages/CompanyProjectManagement.js - COMPLETE FIXED VERSION
 import React, { useState, useEffect, useContext } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { AuthContext } from '../contexts/AuthContext';
 import Navigation from '../components/Navigation';
 import { doc, getDoc, collection, query, where, getDocs, updateDoc, setDoc, addDoc, serverTimestamp, arrayUnion, deleteDoc } from 'firebase/firestore';
 import { db } from '../firebase';
+
+// =============================================================================
+// SAFE DATA ACCESS HELPERS
+// =============================================================================
+
+const safeGet = (obj, path, defaultValue = null) => {
+  return path.split('.').reduce((current, key) => {
+    return current && current[key] !== undefined ? current[key] : defaultValue;
+  }, obj);
+};
+
+const safeNumber = (value, defaultValue = 0) => {
+  if (typeof value === 'number') return value;
+  if (typeof value === 'string') return parseInt(value) || defaultValue;
+  return defaultValue;
+};
+
+const safeArray = (value, defaultValue = []) => {
+  return Array.isArray(value) ? value : defaultValue;
+};
+
+const safeString = (value, defaultValue = '') => {
+  if (typeof value === 'string') return value;
+  if (value === null || value === undefined) return defaultValue;
+  return String(value);
+};
 
 const CompanyProjectManagement = () => {
   const { projectId } = useParams();
@@ -31,7 +57,33 @@ const CompanyProjectManagement = () => {
   const [activeTab, setActiveTab] = useState('overview');
   const [isAddingDeliverable, setIsAddingDeliverable] = useState(false);
   
-  // Fetch project data
+  // =============================================================================
+  // SAFE DATE FORMATTING
+  // =============================================================================
+  
+  const formatDate = (dateStr) => {
+    if (!dateStr) return 'No date set';
+    
+    try {
+      // Handle Firestore timestamp
+      if (dateStr && typeof dateStr === 'object' && dateStr.seconds) {
+        return new Date(dateStr.seconds * 1000).toLocaleDateString();
+      }
+      // Handle regular date string
+      if (typeof dateStr === 'string' || dateStr instanceof Date) {
+        return new Date(dateStr).toLocaleDateString();
+      }
+      return 'Invalid date';
+    } catch (e) {
+      console.error('Date formatting error:', e);
+      return 'Invalid date';
+    }
+  };
+  
+  // =============================================================================
+  // FETCH PROJECT DATA
+  // =============================================================================
+  
   useEffect(() => {
     const fetchProjectData = async () => {
       try {
@@ -43,146 +95,202 @@ const CompanyProjectManagement = () => {
           throw new Error('Project not found');
         }
         
-        const projectData = { id: projectDoc.id, ...projectDoc.data() };
+        const rawProjectData = projectDoc.data();
+        console.log('Raw project data:', rawProjectData);
+        
+        // SAFELY NORMALIZE PROJECT DATA
+        const projectData = {
+          id: projectDoc.id,
+          // Handle both old flat structure and new nested structure
+          title: safeGet(rawProjectData, 'basic.title', safeGet(rawProjectData, 'title', 'Untitled Project')),
+          description: safeGet(rawProjectData, 'basic.description', safeGet(rawProjectData, 'description', '')),
+          category: safeGet(rawProjectData, 'basic.category', safeGet(rawProjectData, 'category', 'Other')),
+          status: safeGet(rawProjectData, 'status.current', safeGet(rawProjectData, 'status', 'open')),
+          companyId: safeGet(rawProjectData, 'company.id', safeGet(rawProjectData, 'companyId', currentUser.uid)),
+          duration: safeGet(rawProjectData, 'requirements.duration', safeGet(rawProjectData, 'duration', '')),
+          compensation: safeGet(rawProjectData, 'compensation.amount', safeGet(rawProjectData, 'compensation', 0)),
+          isExperienceOnly: safeGet(rawProjectData, 'compensation.type', '') === 'unpaid' || safeGet(rawProjectData, 'isExperienceOnly', false),
+          
+          // SAFE ARRAY ACCESS
+          enrolledStudents: safeArray(
+            safeGet(rawProjectData, 'status.selectedStudents', 
+            safeGet(rawProjectData, 'enrolledStudents', []))
+          ),
+          
+          // SAFE TIMESTAMP HANDLING
+          createdAt: rawProjectData.createdAt || safeGet(rawProjectData, 'meta.createdAt', new Date()),
+          
+          // Keep all original data for compatibility
+          ...rawProjectData
+        };
+        
         setProject(projectData);
         
-        const enrolledStudentsIds = projectData.enrolledStudents || [];
+        // SAFE STUDENT FETCHING
+        const enrolledStudentsIds = safeArray(projectData.enrolledStudents);
+        console.log('Enrolled student IDs:', enrolledStudentsIds);
 
         if (enrolledStudentsIds.length > 0) {
           const studentsData = [];
           
           for (const studentId of enrolledStudentsIds) {
-            console.log("Fetching student with ID:", studentId);
-            
-            // Get student profile
-            const studentDoc = await getDoc(doc(db, 'studentProfiles', studentId));
-            
-            // Get user document for email
-            let email = '';
             try {
-              const userDoc = await getDoc(doc(db, 'users', studentId));
-              if (userDoc.exists()) {
-                email = userDoc.data().email || '';
-              }
-            } catch (error) {
-              console.error("Error fetching user email:", error);
-            }
-            
-            if (studentDoc.exists()) {
-              const studentData = studentDoc.data();
-              console.log("Raw student data for", studentId, ":", studentData);
+              console.log("Fetching student with ID:", studentId);
               
-              // Also fetch active project data to get progress
-              let progress = 0;
+              // Get student profile
+              const studentDoc = await getDoc(doc(db, 'studentProfiles', studentId));
+              
+              // Get user document for email
+              let email = '';
               try {
-                const activeProjectsQuery = query(
-                  collection(db, 'activeProjects'),
-                  where('studentId', '==', studentId),
-                  where('projectId', '==', projectId)
-                );
-                const activeProjectsSnapshot = await getDocs(activeProjectsQuery);
-                
-                if (!activeProjectsSnapshot.empty) {
-                  const activeProjectData = activeProjectsSnapshot.docs[0].data();
-                  progress = activeProjectData.progress || 0;
+                const userDoc = await getDoc(doc(db, 'users', studentId));
+                if (userDoc.exists()) {
+                  email = safeString(userDoc.data().email);
                 }
               } catch (error) {
-                console.error("Error fetching active project data:", error);
+                console.error("Error fetching user email:", error);
               }
               
-              studentsData.push({
-                id: studentId,
-                fullName: studentData.fullName || 'Student',
-                displayName: studentData.fullName || 'Student', // Add display name for components that might use it
-                photoURL: studentData.photoURL || '',
-                email: email,
-                major: studentData.major || 'Not specified',
-                college: studentData.college || '',
-                year: studentData.year || 'Not specified',
-                bio: studentData.bio && studentData.bio !== '-' ? studentData.bio : 'No bio provided',
-                skills: studentData.skills || [],
-                progress: progress,
-                ...studentData  // Keep all original data
-              });
-            } else {
-              console.log("No student profile found for ID:", studentId);
-              // Add a placeholder record
-              studentsData.push({
-                id: studentId,
-                fullName: 'Student',
-                displayName: 'Student',
-                photoURL: '',
-                email: email,
-                major: 'Not specified',
-                college: '',
-                bio: 'No bio provided',
-                skills: [],
-                progress: 0
-              });
+              if (studentDoc.exists()) {
+                const studentData = studentDoc.data();
+                console.log("Student data found:", studentData);
+                
+                // SAFELY PROCESS STUDENT DATA
+                studentsData.push({
+                  id: studentId,
+                  fullName: safeString(
+                    safeGet(studentData, 'fullName', 
+                    safeGet(studentData, 'personal.fullName', 'Student'))
+                  ),
+                  displayName: safeString(
+                    safeGet(studentData, 'fullName', 
+                    safeGet(studentData, 'personal.fullName', 'Student'))
+                  ),
+                  photoURL: safeString(
+                    safeGet(studentData, 'photoURL', 
+                    safeGet(studentData, 'personal.photoURL', ''))
+                  ),
+                  email: email,
+                  major: safeString(
+                    safeGet(studentData, 'major', 
+                    safeGet(studentData, 'education.major', 'Not specified'))
+                  ),
+                  college: safeString(
+                    safeGet(studentData, 'college', 
+                    safeGet(studentData, 'education.college', ''))
+                  ),
+                  year: safeString(
+                    safeGet(studentData, 'year', 
+                    safeGet(studentData, 'education.year', 'Not specified'))
+                  ),
+                  bio: (() => {
+                    const bio = safeString(safeGet(studentData, 'bio', ''));
+                    return bio && bio !== '-' ? bio : 'No bio provided';
+                  })(),
+                  skills: safeArray(studentData.skills),
+                  progress: 0, // Will calculate later
+                  ...studentData
+                });
+              } else {
+                console.log("No student profile found for ID:", studentId);
+                // Add placeholder
+                studentsData.push({
+                  id: studentId,
+                  fullName: 'Student',
+                  displayName: 'Student',
+                  photoURL: '',
+                  email: email,
+                  major: 'Not specified',
+                  college: '',
+                  bio: 'No bio provided',
+                  skills: [],
+                  progress: 0
+                });
+              }
+            } catch (studentError) {
+              console.error(`Error fetching student ${studentId}:`, studentError);
             }
           }
           
-          console.log("Final processed student data:", studentsData);
+          console.log("Final processed students:", studentsData);
           setStudents(studentsData);
           
-          // Set first student as active if none is selected
           if (studentsData.length > 0 && !activeStudent) {
             setActiveStudent(studentsData[0]);
           }
         }
         
         // Get deliverables
-        const deliverablesQuery = query(
-          collection(db, 'deliverables'),
-          where('projectId', '==', projectId)
-        );
-        
-        const deliverablesSnapshot = await getDocs(deliverablesQuery);
-        const deliverablesData = deliverablesSnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
-        
-        // Sort deliverables by due date
-        deliverablesData.sort((a, b) => {
-          if (a.dueDate && b.dueDate) {
-            const aDate = a.dueDate.seconds ? new Date(a.dueDate.seconds * 1000) : new Date(a.dueDate);
-            const bDate = b.dueDate.seconds ? new Date(b.dueDate.seconds * 1000) : new Date(b.dueDate);
-            return aDate - bDate;
-          }
-          return 0;
-        });
-        
-        setDeliverables(deliverablesData);
+        try {
+          const deliverablesQuery = query(
+            collection(db, 'deliverables'),
+            where('projectId', '==', projectId)
+          );
+          
+          const deliverablesSnapshot = await getDocs(deliverablesQuery);
+          const deliverablesData = deliverablesSnapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          }));
+          
+          // Sort deliverables by due date
+          deliverablesData.sort((a, b) => {
+            try {
+              if (a.dueDate && b.dueDate) {
+                const aDate = a.dueDate.seconds ? new Date(a.dueDate.seconds * 1000) : new Date(a.dueDate);
+                const bDate = b.dueDate.seconds ? new Date(b.dueDate.seconds * 1000) : new Date(b.dueDate);
+                return aDate - bDate;
+              }
+              return 0;
+            } catch (e) {
+              return 0;
+            }
+          });
+          
+          setDeliverables(deliverablesData);
+        } catch (error) {
+          console.error('Error fetching deliverables:', error);
+          setDeliverables([]);
+        }
         
         // Get pending applications
-        const applicationsQuery = query(
-          collection(db, 'applications'),
-          where('projectId', '==', projectId),
-          where('status', '==', 'pending')
-        );
-        
-        const applicationsSnapshot = await getDocs(applicationsQuery);
-        const applicationsData = applicationsSnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
-        
-        // Fetch student profiles for applications
-        const applicationsWithProfiles = await Promise.all(
-          applicationsData.map(async (app) => {
-            const studentDoc = await getDoc(doc(db, 'studentProfiles', app.studentId));
-            if (studentDoc.exists()) {
-              return {
-                ...app,
-                studentProfile: { id: studentDoc.id, ...studentDoc.data() }
-              };
-            }
-            return app;
-          })
-        );
-        
-        setPendingApplications(applicationsWithProfiles);
+        try {
+          const applicationsQuery = query(
+            collection(db, 'applications'),
+            where('projectId', '==', projectId),
+            where('status', '==', 'pending')
+          );
+          
+          const applicationsSnapshot = await getDocs(applicationsQuery);
+          const applicationsData = applicationsSnapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          }));
+          
+          // Fetch student profiles for applications
+          const applicationsWithProfiles = await Promise.all(
+            applicationsData.map(async (app) => {
+              try {
+                const studentDoc = await getDoc(doc(db, 'studentProfiles', app.studentId));
+                if (studentDoc.exists()) {
+                  return {
+                    ...app,
+                    studentProfile: { id: studentDoc.id, ...studentDoc.data() }
+                  };
+                }
+                return app;
+              } catch (error) {
+                console.error('Error fetching student profile for application:', error);
+                return app;
+              }
+            })
+          );
+          
+          setPendingApplications(applicationsWithProfiles);
+        } catch (error) {
+          console.error('Error fetching applications:', error);
+          setPendingApplications([]);
+        }
         
         // Get messages for active student
         if (activeStudent) {
@@ -195,7 +303,7 @@ const CompanyProjectManagement = () => {
         setLoading(false);
       } catch (error) {
         console.error('Error fetching project data:', error);
-        setError(error.message);
+        setError(safeString(error.message, 'Unknown error occurred'));
         setLoading(false);
       }
     };
@@ -205,7 +313,10 @@ const CompanyProjectManagement = () => {
     }
   }, [projectId, currentUser]);
   
-  // Fetch messages for a specific student
+  // =============================================================================
+  // FETCH MESSAGES
+  // =============================================================================
+  
   const fetchMessages = async (studentId) => {
     try {
       const messagesQuery = query(
@@ -222,21 +333,29 @@ const CompanyProjectManagement = () => {
       
       // Sort messages by timestamp
       messagesData.sort((a, b) => {
-        if (a.timestamp && b.timestamp) {
-          const aTime = a.timestamp.seconds ? a.timestamp.seconds * 1000 : new Date(a.timestamp).getTime();
-          const bTime = b.timestamp.seconds ? b.timestamp.seconds * 1000 : new Date(b.timestamp).getTime();
-          return aTime - bTime;
+        try {
+          if (a.timestamp && b.timestamp) {
+            const aTime = a.timestamp.seconds ? a.timestamp.seconds * 1000 : new Date(a.timestamp).getTime();
+            const bTime = b.timestamp.seconds ? b.timestamp.seconds * 1000 : new Date(b.timestamp).getTime();
+            return aTime - bTime;
+          }
+          return 0;
+        } catch (e) {
+          return 0;
         }
-        return 0;
       });
       
       setMessages(messagesData);
     } catch (error) {
       console.error('Error fetching messages:', error);
+      setMessages([]);
     }
   };
   
-  // Fetch submissions for all deliverables
+  // =============================================================================
+  // FETCH SUBMISSIONS
+  // =============================================================================
+  
   const fetchSubmissions = async () => {
     try {
       const submissionsQuery = query(
@@ -253,10 +372,30 @@ const CompanyProjectManagement = () => {
       setSubmissions(submissionsData);
     } catch (error) {
       console.error('Error fetching submissions:', error);
+      setSubmissions([]);
     }
   };
   
-  // Submit a message to a student
+  // =============================================================================
+  // SAFE PROGRESS CALCULATION
+  // =============================================================================
+  
+  const calculateStudentProgress = (studentId) => {
+    const totalDeliverables = safeNumber(deliverables.length);
+    if (totalDeliverables === 0) return 0;
+    
+    const studentSubmissions = submissions.filter(submission => submission.studentId === studentId);
+    const completedCount = studentSubmissions.filter(submission => 
+      submission.status === 'approved'
+    ).length;
+    
+    return Math.round((safeNumber(completedCount) / totalDeliverables) * 100);
+  };
+  
+  // =============================================================================
+  // MESSAGE HANDLING
+  // =============================================================================
+  
   const handleSubmitMessage = async (e) => {
     e.preventDefault();
     
@@ -282,7 +421,7 @@ const CompanyProjectManagement = () => {
         userId: currentUser.uid,
         userType: 'company',
         activityType: 'message',
-        content: `sent a message to ${activeStudent.fullName || 'Student'}`,
+        content: `sent a message to ${safeString(activeStudent.fullName, 'Student')}`,
         timestamp: serverTimestamp()
       });
       
@@ -293,17 +432,20 @@ const CompanyProjectManagement = () => {
     }
   };
   
-  // Add a new deliverable
+  // =============================================================================
+  // DELIVERABLE HANDLING
+  // =============================================================================
+  
   const handleAddDeliverable = async (e) => {
     e.preventDefault();
     
     try {
       const deliverableData = {
         projectId,
-        title: newDeliverable.title,
-        description: newDeliverable.description,
+        title: safeString(newDeliverable.title),
+        description: safeString(newDeliverable.description),
         dueDate: newDeliverable.dueDate ? new Date(newDeliverable.dueDate) : null,
-        points: parseInt(newDeliverable.points) || 10,
+        points: safeNumber(newDeliverable.points, 10),
         status: 'pending',
         createdAt: serverTimestamp(),
         feedback: ''
@@ -317,7 +459,7 @@ const CompanyProjectManagement = () => {
         userId: currentUser.uid,
         userType: 'company',
         activityType: 'deliverable',
-        content: `added a new deliverable: ${newDeliverable.title}`,
+        content: `added a new deliverable: ${safeString(newDeliverable.title)}`,
         timestamp: serverTimestamp()
       });
       
@@ -346,12 +488,16 @@ const CompanyProjectManagement = () => {
       
       // Sort deliverables by due date
       deliverablesData.sort((a, b) => {
-        if (a.dueDate && b.dueDate) {
-          const aDate = a.dueDate.seconds ? new Date(a.dueDate.seconds * 1000) : new Date(a.dueDate);
-          const bDate = b.dueDate.seconds ? new Date(b.dueDate.seconds * 1000) : new Date(b.dueDate);
-          return aDate - bDate;
+        try {
+          if (a.dueDate && b.dueDate) {
+            const aDate = a.dueDate.seconds ? new Date(a.dueDate.seconds * 1000) : new Date(a.dueDate);
+            const bDate = b.dueDate.seconds ? new Date(b.dueDate.seconds * 1000) : new Date(b.dueDate);
+            return aDate - bDate;
+          }
+          return 0;
+        } catch (e) {
+          return 0;
         }
-        return 0;
       });
       
       setDeliverables(deliverablesData);
@@ -360,7 +506,10 @@ const CompanyProjectManagement = () => {
     }
   };
   
-  // Accept student application
+  // =============================================================================
+  // APPLICATION HANDLING
+  // =============================================================================
+  
   const handleAcceptApplication = async (application) => {
     try {
       // Update application status - ADD THE TWO KEY FIELDS HERE
@@ -382,7 +531,7 @@ const CompanyProjectManagement = () => {
         userId: currentUser.uid,
         userType: 'company',
         activityType: 'enrollment',
-        content: `accepted ${application.studentProfile?.fullName || 'student'}'s application`,
+        content: `accepted ${safeString(safeGet(application, 'studentProfile.fullName', 'student'))}'s application`,
         timestamp: serverTimestamp()
       });
       
@@ -401,14 +550,19 @@ const CompanyProjectManagement = () => {
       
       const applicationsWithProfiles = await Promise.all(
         applicationsData.map(async (app) => {
-          const studentDoc = await getDoc(doc(db, 'studentProfiles', app.studentId));
-          if (studentDoc.exists()) {
-            return {
-              ...app,
-              studentProfile: { id: studentDoc.id, ...studentDoc.data() }
-            };
+          try {
+            const studentDoc = await getDoc(doc(db, 'studentProfiles', app.studentId));
+            if (studentDoc.exists()) {
+              return {
+                ...app,
+                studentProfile: { id: studentDoc.id, ...studentDoc.data() }
+              };
+            }
+            return app;
+          } catch (error) {
+            console.error('Error fetching student profile:', error);
+            return app;
           }
-          return app;
         })
       );
       
@@ -416,27 +570,25 @@ const CompanyProjectManagement = () => {
       
       // Refresh project data
       const projectDoc = await getDoc(doc(db, 'projects', projectId));
-      const projectData = { id: projectDoc.id, ...projectDoc.data() };
-      setProject(projectData);
-      
-      // Refresh enrolled students
-      const enrolledStudentsIds = projectData.enrolledStudents || [];
-      
-      if (enrolledStudentsIds.length > 0) {
-        const studentsData = [];
-        
-        for (const studentId of enrolledStudentsIds) {
-          const studentDoc = await getDoc(doc(db, 'studentProfiles', studentId));
-          if (studentDoc.exists()) {
-            studentsData.push({ id: studentDoc.id, ...studentDoc.data() });
-          }
-        }
-        
-        setStudents(studentsData);
+      if (projectDoc.exists()) {
+        const rawProjectData = projectDoc.data();
+        const projectData = {
+          id: projectDoc.id,
+          title: safeGet(rawProjectData, 'basic.title', safeGet(rawProjectData, 'title', 'Untitled Project')),
+          description: safeGet(rawProjectData, 'basic.description', safeGet(rawProjectData, 'description', '')),
+          category: safeGet(rawProjectData, 'basic.category', safeGet(rawProjectData, 'category', 'Other')),
+          status: safeGet(rawProjectData, 'status.current', safeGet(rawProjectData, 'status', 'open')),
+          enrolledStudents: safeArray(
+            safeGet(rawProjectData, 'status.selectedStudents', 
+            safeGet(rawProjectData, 'enrolledStudents', []))
+          ),
+          ...rawProjectData
+        };
+        setProject(projectData);
       }
-
+      
       // Optional: Show success message
-      alert(`${application.studentProfile?.fullName || 'Student'} has been accepted! They will see a congratulations modal when they visit their dashboard.`);
+      alert(`${safeString(safeGet(application, 'studentProfile.fullName', 'Student'))} has been accepted! They will see a congratulations modal when they visit their dashboard.`);
       
     } catch (error) {
       console.error('Error accepting application:', error);
@@ -444,7 +596,6 @@ const CompanyProjectManagement = () => {
     }
   };
   
-  // Reject student application
   const handleRejectApplication = async (application) => {
     try {
       // Update application status
@@ -468,14 +619,19 @@ const CompanyProjectManagement = () => {
       
       const applicationsWithProfiles = await Promise.all(
         applicationsData.map(async (app) => {
-          const studentDoc = await getDoc(doc(db, 'studentProfiles', app.studentId));
-          if (studentDoc.exists()) {
-            return {
-              ...app,
-              studentProfile: { id: studentDoc.id, ...studentDoc.data() }
-            };
+          try {
+            const studentDoc = await getDoc(doc(db, 'studentProfiles', app.studentId));
+            if (studentDoc.exists()) {
+              return {
+                ...app,
+                studentProfile: { id: studentDoc.id, ...studentDoc.data() }
+              };
+            }
+            return app;
+          } catch (error) {
+            console.error('Error fetching student profile:', error);
+            return app;
           }
-          return app;
         })
       );
       
@@ -485,7 +641,10 @@ const CompanyProjectManagement = () => {
     }
   };
   
-  // Provide feedback on a submission
+  // =============================================================================
+  // FEEDBACK HANDLING
+  // =============================================================================
+  
   const handleProvideFeedback = async (submission, feedback, status) => {
     try {
       // Update submission
@@ -510,7 +669,9 @@ const CompanyProjectManagement = () => {
         userType: 'company',
         studentId: submission.studentId,
         activityType: 'feedback',
-        content: `provided feedback on submission for ${deliverables.find(d => d.id === deliverableId)?.title || 'deliverable'}`,
+        content: `provided feedback on submission for ${safeString(
+          deliverables.find(d => d.id === deliverableId)?.title, 'deliverable'
+        )}`,
         timestamp: serverTimestamp()
       });
       
@@ -535,39 +696,14 @@ const CompanyProjectManagement = () => {
     }
   };
   
-  // Format date
-  const formatDate = (dateStr) => {
-    if (!dateStr) return 'No date set';
-    
-    try {
-      if (dateStr.seconds) {
-        // Firestore timestamp
-        return new Date(dateStr.seconds * 1000).toLocaleDateString();
-      }
-      return new Date(dateStr).toLocaleDateString();
-    } catch (e) {
-      return dateStr;
-    }
-  };
+  // =============================================================================
+  // UTILITY FUNCTIONS
+  // =============================================================================
   
-  // Get student submissions
   const getStudentSubmissions = (studentId) => {
     return submissions.filter(submission => submission.studentId === studentId);
   };
   
-  // Calculate student progress
-  const calculateStudentProgress = (studentId) => {
-    if (!deliverables.length) return 0;
-    
-    const studentSubmissions = getStudentSubmissions(studentId);
-    const completedCount = studentSubmissions.filter(submission => 
-      submission.status === 'approved'
-    ).length;
-    
-    return Math.round((completedCount / deliverables.length) * 100);
-  };
-  
-  // Get status class for styling
   const getStatusClass = (status) => {
     switch (status) {
       case 'completed':
@@ -584,6 +720,10 @@ const CompanyProjectManagement = () => {
         return '';
     }
   };
+  
+  // =============================================================================
+  // RENDER LOADING/ERROR STATES
+  // =============================================================================
   
   if (loading) {
     return (
@@ -614,15 +754,19 @@ const CompanyProjectManagement = () => {
     );
   }
   
+  // =============================================================================
+  // MAIN RENDER
+  // =============================================================================
+  
   return (
     <>
       <Navigation />
       <div className="container" style={{ padding: '40px 0' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
           <div>
-            <h2 style={{ marginBottom: '5px' }}>{project?.title}</h2>
+            <h2 style={{ marginBottom: '5px' }}>{safeString(project?.title, 'Project')}</h2>
             <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-              <span className="feature-badge">{project?.category}</span>
+              <span className="feature-badge">{safeString(project?.category, 'Category')}</span>
               <span>Project Management</span>
             </div>
           </div>
@@ -662,7 +806,7 @@ const CompanyProjectManagement = () => {
               color: activeTab === 'students' ? 'var(--primary)' : 'inherit'
             }}
           >
-            Students {students.length > 0 && `(${students.length})`}
+            Students {students.length > 0 && `(${safeNumber(students.length)})`}
           </button>
           <button 
             onClick={() => setActiveTab('deliverables')}
@@ -676,7 +820,7 @@ const CompanyProjectManagement = () => {
               color: activeTab === 'deliverables' ? 'var(--primary)' : 'inherit'
             }}
           >
-            Deliverables {deliverables.length > 0 && `(${deliverables.length})`}
+            Deliverables {deliverables.length > 0 && `(${safeNumber(deliverables.length)})`}
           </button>
           <button 
             onClick={() => setActiveTab('applications')}
@@ -690,7 +834,7 @@ const CompanyProjectManagement = () => {
               color: activeTab === 'applications' ? 'var(--primary)' : 'inherit'
             }}
           >
-            Applications {pendingApplications.length > 0 && `(${pendingApplications.length})`}
+            Applications {pendingApplications.length > 0 && `(${safeNumber(pendingApplications.length)})`}
           </button>
         </div>
         
@@ -701,26 +845,35 @@ const CompanyProjectManagement = () => {
               <div style={{ background: 'white', padding: '20px', borderRadius: '16px', boxShadow: '0 10px 30px rgba(0,0,0,0.05)' }}>
                 <h3 style={{ marginBottom: '10px' }}>Project Info</h3>
                 <div style={{ marginBottom: '10px' }}>
-                  <strong>Status:</strong> {project?.status === 'open' ? 'Active' : project?.status}
+                  <strong>Status:</strong> {(() => {
+                    const status = project?.status;
+                    // Handle object status (nested structure)
+                    if (status && typeof status === 'object') {
+                      const currentStatus = status.current || status.status || 'Unknown';
+                      return currentStatus === 'open' ? 'Active' : safeString(currentStatus);
+                    }
+                    // Handle string status (flat structure)
+                    return status === 'open' ? 'Active' : safeString(status, 'Unknown');
+                  })()}
                 </div>
                 <div style={{ marginBottom: '10px' }}>
                   <strong>Posted:</strong> {formatDate(project?.createdAt)}
                 </div>
                 <div style={{ marginBottom: '10px' }}>
-                  <strong>Duration:</strong> {project?.duration}
+                  <strong>Duration:</strong> {safeString(project?.duration, 'Not specified')}
                 </div>
                 <div>
-                  <strong>Compensation:</strong> {project?.isExperienceOnly ? 'Experience Only' : `$${project?.compensation}`}
+                  <strong>Compensation:</strong> {project?.isExperienceOnly ? 'Experience Only' : `${safeNumber(project?.compensation)}`}
                 </div>
               </div>
               
               <div style={{ background: 'white', padding: '20px', borderRadius: '16px', boxShadow: '0 10px 30px rgba(0,0,0,0.05)' }}>
                 <h3 style={{ marginBottom: '10px' }}>Students</h3>
                 <div style={{ fontSize: '32px', fontWeight: '700', marginBottom: '10px' }}>
-                  {students.length}
+                  {safeNumber(students.length)}
                 </div>
                 <div style={{ marginBottom: '10px' }}>
-                  <strong>Active:</strong> {students.length}
+                  <strong>Active:</strong> {safeNumber(students.length)}
                 </div>
                 <button 
                   onClick={() => setActiveTab('students')}
@@ -734,10 +887,10 @@ const CompanyProjectManagement = () => {
               <div style={{ background: 'white', padding: '20px', borderRadius: '16px', boxShadow: '0 10px 30px rgba(0,0,0,0.05)' }}>
                 <h3 style={{ marginBottom: '10px' }}>Deliverables</h3>
                 <div style={{ fontSize: '32px', fontWeight: '700', marginBottom: '10px' }}>
-                  {deliverables.length}
+                  {safeNumber(deliverables.length)}
                 </div>
                 <div style={{ marginBottom: '10px' }}>
-                  <strong>Completed:</strong> {deliverables.filter(d => d.status === 'completed').length}
+                  <strong>Completed:</strong> {safeNumber(deliverables.filter(d => d.status === 'completed').length)}
                 </div>
                 <button 
                   onClick={() => setActiveTab('deliverables')}
@@ -751,10 +904,10 @@ const CompanyProjectManagement = () => {
               <div style={{ background: 'white', padding: '20px', borderRadius: '16px', boxShadow: '0 10px 30px rgba(0,0,0,0.05)' }}>
                 <h3 style={{ marginBottom: '10px' }}>Applications</h3>
                 <div style={{ fontSize: '32px', fontWeight: '700', marginBottom: '10px' }}>
-                  {pendingApplications.length}
+                  {safeNumber(pendingApplications.length)}
                 </div>
                 <div style={{ marginBottom: '10px' }}>
-                  <strong>Pending Review:</strong> {pendingApplications.length}
+                  <strong>Pending Review:</strong> {safeNumber(pendingApplications.length)}
                 </div>
                 <button 
                   onClick={() => setActiveTab('applications')}
@@ -768,13 +921,13 @@ const CompanyProjectManagement = () => {
             
             <div style={{ background: 'white', padding: '25px', borderRadius: '16px', boxShadow: '0 10px 30px rgba(0,0,0,0.05)', marginBottom: '30px' }}>
               <h3 style={{ marginBottom: '20px' }}>Project Description</h3>
-              <p style={{ whiteSpace: 'pre-wrap' }}>{project?.description}</p>
+              <p style={{ whiteSpace: 'pre-wrap' }}>{safeString(project?.description, 'No description available')}</p>
               
               <div style={{ marginTop: '20px' }}>
                 <h4 style={{ marginBottom: '10px' }}>Required Skills</h4>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                  {project?.skills?.map(skill => (
-                    <span key={skill} className="feature-badge">{skill}</span>
+                  {safeArray(project?.skills).map(skill => (
+                    <span key={skill} className="feature-badge">{safeString(skill)}</span>
                   ))}
                 </div>
               </div>
@@ -789,12 +942,16 @@ const CompanyProjectManagement = () => {
                 <div>
                   {submissions
                     .sort((a, b) => {
-                      if (a.submittedAt && b.submittedAt) {
-                        const aTime = a.submittedAt.seconds ? a.submittedAt.seconds * 1000 : new Date(a.submittedAt).getTime();
-                        const bTime = b.submittedAt.seconds ? b.submittedAt.seconds * 1000 : new Date(b.submittedAt).getTime();
-                        return bTime - aTime; // Most recent first
+                      try {
+                        if (a.submittedAt && b.submittedAt) {
+                          const aTime = a.submittedAt.seconds ? a.submittedAt.seconds * 1000 : new Date(a.submittedAt).getTime();
+                          const bTime = b.submittedAt.seconds ? b.submittedAt.seconds * 1000 : new Date(b.submittedAt).getTime();
+                          return bTime - aTime; // Most recent first
+                        }
+                        return 0;
+                      } catch (e) {
+                        return 0;
                       }
-                      return 0;
                     })
                     .slice(0, 5)
                     .map(submission => {
@@ -816,7 +973,7 @@ const CompanyProjectManagement = () => {
                         >
                           <div>
                             <div style={{ fontWeight: '500', marginBottom: '5px' }}>
-                              {student ? (student.fullName || 'Student') : 'Student'} - {deliverable?.title || 'Deliverable'}
+                              {safeString(student?.fullName, 'Student')} - {safeString(deliverable?.title, 'Deliverable')}
                             </div>
                             <div style={{ fontSize: '14px', color: '#666' }}>
                               Submitted on {formatDate(submission.submittedAt)}
@@ -824,8 +981,8 @@ const CompanyProjectManagement = () => {
                           </div>
                           
                           <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                          <span className={`feature-badge ${getStatusClass(submission.status)}`}>
-                              {submission.status}
+                            <span className={`feature-badge ${getStatusClass(submission.status)}`}>
+                              {safeString(submission.status, 'pending')}
                             </span>
                             <button 
                               onClick={() => {
@@ -876,10 +1033,10 @@ const CompanyProjectManagement = () => {
                         }}
                         onClick={() => setActiveStudent(student)}
                       >
-                        {student.photoURL ? (
+                        {safeString(student.photoURL) ? (
                           <img 
                             src={student.photoURL} 
-                            alt={student.fullName || 'Student'} 
+                            alt={safeString(student.fullName, 'Student')} 
                             style={{ 
                               width: '40px', 
                               height: '40px', 
@@ -900,16 +1057,16 @@ const CompanyProjectManagement = () => {
                             fontSize: '16px',
                             fontWeight: '500'
                           }}>
-                            {student.fullName ? student.fullName.charAt(0) : 'S'}
+                            {safeString(student.fullName, 'S').charAt(0)}
                           </div>
                         )}
                         
                         <div style={{ flex: '1' }}>
                           <div style={{ fontWeight: '500' }}>
-                            {student.fullName || 'Student'}
+                            {safeString(student.fullName, 'Student')}
                           </div>
                           <div style={{ fontSize: '14px', color: '#666' }}>
-                            Progress: {student.progress || calculateStudentProgress(student.id) || 0}%
+                            Progress: {safeNumber(student.progress || calculateStudentProgress(student.id))}%
                           </div>
                         </div>
                       </div>
@@ -925,10 +1082,10 @@ const CompanyProjectManagement = () => {
                 <>
                   <div style={{ background: 'white', padding: '25px', borderRadius: '16px', boxShadow: '0 10px 30px rgba(0,0,0,0.05)', marginBottom: '30px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '20px', marginBottom: '20px' }}>
-                      {activeStudent.photoURL ? (
+                      {safeString(activeStudent.photoURL) ? (
                         <img 
                           src={activeStudent.photoURL} 
-                          alt={activeStudent.fullName || 'Student'} 
+                          alt={safeString(activeStudent.fullName, 'Student')} 
                           style={{ 
                             width: '60px', 
                             height: '60px', 
@@ -949,36 +1106,36 @@ const CompanyProjectManagement = () => {
                           fontSize: '24px',
                           fontWeight: '500'
                         }}>
-                          {activeStudent.fullName ? activeStudent.fullName.charAt(0) : 'S'}
+                          {safeString(activeStudent.fullName, 'S').charAt(0)}
                         </div>
                       )}
                       
                       <div>
-                        <h3 style={{ marginBottom: '5px' }}>{activeStudent.fullName || 'Student'}</h3>
-                        <div>{activeStudent.college || activeStudent.university || 'Student'}</div>
+                        <h3 style={{ marginBottom: '5px' }}>{safeString(activeStudent.fullName, 'Student')}</h3>
+                        <div>{safeString(activeStudent.college || activeStudent.university, 'University')}</div>
                       </div>
                     </div>
                     
                     <div style={{ marginBottom: '20px' }}>
                       <div style={{ marginBottom: '10px' }}>
-                        <strong>Email:</strong> {activeStudent.email || 'Not provided'}
+                        <strong>Email:</strong> {safeString(activeStudent.email, 'Not provided')}
                       </div>
                       <div style={{ marginBottom: '10px' }}>
-                        <strong>Major:</strong> {activeStudent.major || 'Not specified'}
+                        <strong>Major:</strong> {safeString(activeStudent.major, 'Not specified')}
                       </div>
                       <div style={{ marginBottom: '10px' }}>
-                        <strong>Year:</strong> {activeStudent.year || 'Not specified'}
+                        <strong>Year:</strong> {safeString(activeStudent.year, 'Not specified')}
                       </div>
                       <div>
-                        <strong>Skills:</strong> {Array.isArray(activeStudent.skills) && activeStudent.skills.length > 0 
-                          ? activeStudent.skills.join(', ') 
+                        <strong>Skills:</strong> {safeArray(activeStudent.skills).length > 0 
+                          ? safeArray(activeStudent.skills).join(', ') 
                           : 'None listed'}
                       </div>
                     </div>
                     
                     <div>
                       <strong>Bio:</strong>
-                      <p>{activeStudent.bio || 'No bio provided'}</p>
+                      <p>{safeString(activeStudent.bio, 'No bio provided')}</p>
                     </div>
                   </div>
                   
@@ -1021,14 +1178,14 @@ const CompanyProjectManagement = () => {
                           }}
                         >
                           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
-                            <span style={{ fontWeight: '500' }}>{deliverable.title}</span>
+                            <span style={{ fontWeight: '500' }}>{safeString(deliverable.title)}</span>
                             <span className={`feature-badge ${getStatusClass(submission?.status || deliverable.status)}`} style={{ fontSize: '12px', padding: '3px 8px' }}>
-                              {submission?.status || deliverable.status}
+                              {safeString(submission?.status || deliverable.status, 'pending')}
                             </span>
                           </div>
                           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', color: '#666' }}>
                             <span>Due: {formatDate(deliverable.dueDate)}</span>
-                            <span>{deliverable.points} pts</span>
+                            <span>{safeNumber(deliverable.points)} pts</span>
                           </div>
                           
                           {submission && (
@@ -1039,7 +1196,7 @@ const CompanyProjectManagement = () => {
                               
                               {submission.content && (
                                 <div style={{ fontSize: '14px', marginBottom: '5px' }}>
-                                  <strong>Notes:</strong> {submission.content}
+                                  <strong>Notes:</strong> {safeString(submission.content)}
                                 </div>
                               )}
                               
@@ -1085,7 +1242,7 @@ const CompanyProjectManagement = () => {
                               
                               {submission.feedback && (
                                 <div style={{ fontSize: '14px', marginTop: '5px' }}>
-                                  <strong>Feedback:</strong> {submission.feedback}
+                                  <strong>Feedback:</strong> {safeString(submission.feedback)}
                                 </div>
                               )}
                             </div>
@@ -1126,7 +1283,7 @@ const CompanyProjectManagement = () => {
                               borderRadius: '12px',
                               maxWidth: '80%'
                             }}>
-                              {message.content}
+                              {safeString(message.content)}
                             </div>
                             <div style={{ 
                               fontSize: '12px', 
@@ -1305,12 +1462,12 @@ const CompanyProjectManagement = () => {
                   >
                     <div style={{ position: 'absolute', top: '20px', right: '20px' }}>
                       <span className={`feature-badge ${getStatusClass(deliverable.status)}`}>
-                        {deliverable.status}
+                        {safeString(deliverable.status, 'pending')}
                       </span>
                     </div>
                     
-                    <h3>{deliverable.title}</h3>
-                    <p>{deliverable.description}</p>
+                    <h3>{safeString(deliverable.title)}</h3>
+                    <p>{safeString(deliverable.description)}</p>
                     
                     <div style={{ marginTop: '15px' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
@@ -1319,7 +1476,7 @@ const CompanyProjectManagement = () => {
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                         <span style={{ fontWeight: '500' }}>Points:</span>
-                        <span>{deliverable.points}</span>
+                        <span>{safeNumber(deliverable.points)}</span>
                       </div>
                     </div>
                     
@@ -1327,13 +1484,7 @@ const CompanyProjectManagement = () => {
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
                         <span style={{ fontWeight: '500' }}>Submitted:</span>
                         <span>
-                          {submissions.filter(s => s.deliverableId === deliverable.id).length} / {students.length}
-                        </span>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <span style={{ fontWeight: '500' }}>Completed:</span>
-                        <span>
-                          {submissions.filter(s => s.deliverableId === deliverable.id && s.status === 'approved').length} / {students.length}
+                          {safeNumber(submissions.filter(s => s.deliverableId === deliverable.id && s.status === 'approved').length)} / {safeNumber(students.length)}
                         </span>
                       </div>
                     </div>
@@ -1384,15 +1535,15 @@ const CompanyProjectManagement = () => {
                         fontSize: '18px',
                         fontWeight: '500'
                       }}>
-                        {application.studentProfile?.fullName ? application.studentProfile.fullName.charAt(0) : 'S'}
+                        {safeString(safeGet(application, 'studentProfile.fullName', 'Student')).charAt(0)}
                       </div>
                       
                       <div>
                         <h4 style={{ marginBottom: '5px' }}>
-                          {application.studentProfile?.fullName || 'Student'}
+                          {safeString(safeGet(application, 'studentProfile.fullName', 'Student'))}
                         </h4>
                         <div style={{ fontSize: '14px', color: '#666' }}>
-                          {application.studentProfile?.university || 'Student'} - {application.studentProfile?.major || 'Not specified'}
+                          {safeString(safeGet(application, 'studentProfile.university', safeGet(application, 'studentProfile.college', 'University')))} - {safeString(safeGet(application, 'studentProfile.major', 'Not specified'))}
                         </div>
                       </div>
                     </div>
@@ -1407,12 +1558,12 @@ const CompanyProjectManagement = () => {
                         maxHeight: '150px',
                         overflowY: 'auto'
                       }}>
-                        {application.coverLetter}
+                        {safeString(application.coverLetter, 'No cover letter provided')}
                       </p>
                     </div>
                     
                     <div style={{ marginBottom: '15px' }}>
-                      <strong>Availability:</strong> {application.availability}
+                      <strong>Availability:</strong> {safeString(application.availability, 'Not specified')}
                     </div>
                     
                     <div style={{ marginBottom: '15px' }}>
