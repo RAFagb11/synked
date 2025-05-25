@@ -1,10 +1,9 @@
 // src/pages/PostProject.js
 import React, { useState, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
-import { db } from '../firebase';
 import { AuthContext } from '../contexts/AuthContext';
 import Navigation from '../components/Navigation';
+import { createProject } from '../services/projectService';
 
 const PostProject = () => {
   const { currentUser } = useContext(AuthContext);
@@ -48,25 +47,20 @@ const PostProject = () => {
       
       const skillsArray = skills.split(',').map(skill => skill.trim());
       
+      // FLAT PROJECT DATA
       const projectData = {
         title,
         description,
         category,
         skills: skillsArray,
         duration,
-        compensation: isExperienceOnly ? null : parseFloat(compensation),
+        compensation: isExperienceOnly ? 0 : parseFloat(compensation),
         isExperienceOnly,
-        companyId: currentUser.uid,
-        status: 'open',
-        createdAt: serverTimestamp(),
-        applicants: [],
-        applicationRequirements: {
-          question: applicationQuestion,
-          requireVideoIntro: requireVideoIntro
-        }
+        applicationQuestion,
+        requireVideoIntro
       };
       
-      await addDoc(collection(db, 'projects'), projectData);
+      await createProject(currentUser.uid, projectData);
       
       navigate('/company/dashboard');
     } catch (error) {

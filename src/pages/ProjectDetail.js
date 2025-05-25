@@ -1,23 +1,15 @@
 // src/pages/ProjectDetail.js
 import React, { useState, useEffect, useContext } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { getProjectById } from '../services/projectService';
-import { getCompanyProfile } from '../services/profileService';
-import { createApplication } from '../services/applicationService';
 import { AuthContext } from '../contexts/AuthContext';
 import Navigation from '../components/Navigation';
 import VideoRecorder from '../components/VideoRecorder';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { storage, db } from '../firebase';
-import { 
-  doc, 
-  updateDoc, 
-  arrayUnion, 
-  collection, 
-  query, 
-  where, 
-  getDocs 
-} from 'firebase/firestore';
+import { doc, updateDoc, arrayUnion, collection, query, where, getDocs } from 'firebase/firestore';
+import { createApplication } from '../services/applicationService';
+import { getProjectById } from '../services/projectService';
+import { getCompanyProfile } from '../services/profileService';
 
 const ProjectDetail = () => {
   const { id } = useParams();
@@ -112,18 +104,9 @@ const ProjectDetail = () => {
     try {
       setSubmitting(true);
       
-      // Check if student already has an application
-      const hasExisting = await checkExistingApplications(currentUser.uid);
-      
-      if (hasExisting) {
-        setError('You can only apply to one project at a time. Please withdraw your existing application first.');
-        setSubmitting(false);
-        return;
-      }
-      
       let finalVideoUrl = videoUrl;
       
-      // Upload video file if one was selected (not recorded)
+      // Upload video file if provided
       if (videoFile) {
         setVideoUploading(true);
         const storageRef = ref(storage, `applications/${currentUser.uid}/${project.id}/video_${Date.now()}`);
@@ -132,30 +115,26 @@ const ProjectDetail = () => {
         setVideoUploading(false);
       }
       
-      // Prepare application data
+      // FLAT APPLICATION DATA
       const applicationData = {
         projectId: id,
-        projectTitle: project.title,
         studentId: currentUser.uid,
+        companyId: project.companyId,
         coverLetter: coverLetter,
         availability: availability,
-        companyId: project.companyId,
-        appliedAt: new Date().toISOString(),
         applicationAnswer: applicationAnswer,
-        videoUrl: finalVideoUrl,
-        status: 'pending'
+        videoUrl: finalVideoUrl
       };
       
-      // Submit application
+      // Submit application using service
       await createApplication(applicationData);
       
-      // Update project's applicants array
+      // Update project's applicants array for compatibility
       const projectRef = doc(db, 'projects', id);
       await updateDoc(projectRef, {
         applicants: arrayUnion(currentUser.uid)
       });
       
-      // Success state
       setApplicationSuccess(true);
       setShowApplicationForm(false);
       setSubmitting(false);

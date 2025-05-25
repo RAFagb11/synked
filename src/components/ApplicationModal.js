@@ -3,18 +3,19 @@ import React, { useState, useEffect } from 'react';
 import { doc, updateDoc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { getStudentProfile } from '../services/profileService';
+import { updateApplicationStatus } from '../services/applicationService';
 
 const ApplicationModal = ({ application, isOpen, onClose, onUpdate }) => {
   const [student, setStudent] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [status, setStatus] = useState(application.status);
+  const [status, setStatus] = useState(application.status); // SIMPLE ACCESS
   const [feedback, setFeedback] = useState('');
   const [updating, setUpdating] = useState(false);
 
   useEffect(() => {
     const fetchStudentProfile = async () => {
       try {
-        const studentData = await getStudentProfile(application.studentId);
+        const studentData = await getStudentProfile(application.studentId); // SIMPLE ACCESS
         setStudent(studentData);
         setLoading(false);
       } catch (error) {
@@ -31,12 +32,7 @@ const ApplicationModal = ({ application, isOpen, onClose, onUpdate }) => {
   const handleStatusUpdate = async () => {
     setUpdating(true);
     try {
-      const applicationRef = doc(db, 'applications', application.id);
-      await updateDoc(applicationRef, {
-        status,
-        feedback,
-        lastUpdated: new Date().toISOString()
-      });
+      await updateApplicationStatus(application.id, status, feedback);
       onUpdate();
       onClose();
     } catch (error) {
@@ -46,6 +42,7 @@ const ApplicationModal = ({ application, isOpen, onClose, onUpdate }) => {
       setUpdating(false);
     }
   };
+  
 
   if (!isOpen) return null;
 

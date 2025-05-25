@@ -1,9 +1,9 @@
 // src/pages/ProjectListings.js
 import React, { useState, useEffect } from 'react';
-import { collection, getDocs, query, where, orderBy } from 'firebase/firestore';
-import { db } from '../firebase';
 import Navigation from '../components/Navigation';
 import ProjectCard from '../components/ProjectCard';
+import { getProjects } from '../services/projectService';
+
 
 const ProjectListings = () => {
   const [projects, setProjects] = useState([]);
@@ -15,54 +15,32 @@ const ProjectListings = () => {
   useEffect(() => {
     const fetchProjects = async () => {
       try {
-        // Simple query without complex filtering or ordering
-        const projectsRef = collection(db, 'projects');
-        console.log("Fetching projects from collection:", projectsRef.path);
+        setLoading(true);
         
-        const querySnapshot = await getDocs(projectsRef);
-        console.log("Projects collection exists:", !querySnapshot.empty);
-        console.log("Number of documents found:", querySnapshot.size);
-        
-        // Get all projects
-        let projectsList = querySnapshot.docs.map(doc => {
-          console.log("Document ID:", doc.id, "Document data:", doc.data());
-          return {
-            id: doc.id,
-            ...doc.data()
-          };
+        // Use the service instead of direct Firestore queries
+        const projectsList = await getProjects({
+          category: filter !== 'all' ? filter : undefined,
+          sortBy: 'createdAt',
+          sortDirection: 'desc'
         });
         
-        console.log("Query returned:", projectsList.length, "documents");
-        
-        // Apply filters in memory
-        if (filter !== 'all') {
-          projectsList = projectsList.filter(project => project.category === filter);
-        }
-        
-        // Sort by createdAt
-        projectsList.sort((a, b) => {
-          // Handle both Firestore timestamps and regular dates
-          const timeA = a.createdAt?.seconds ? new Date(a.createdAt.seconds * 1000) : new Date(a.createdAt);
-          const timeB = b.createdAt?.seconds ? new Date(b.createdAt.seconds * 1000) : new Date(b.createdAt);
-          return timeB - timeA; // Descending order
-        });
-        
-        // If there's a search term, filter projects by title or description
+        // Filter by search term if provided
         const filteredProjects = searchTerm 
           ? projectsList.filter(project => 
               project.title.toLowerCase().includes(searchTerm.toLowerCase()) || 
               project.description.toLowerCase().includes(searchTerm.toLowerCase())
             )
           : projectsList;
-          
-        console.log("Final filtered projects:", filteredProjects.length);
+            
         setProjects(filteredProjects);
         setLoading(false);
       } catch (error) {
         console.error('Error fetching projects:', error);
+        setError('Failed to load projects');
         setLoading(false);
       }
     };
+    
     
     fetchProjects();
   }, [filter, searchTerm]);

@@ -12,6 +12,7 @@ const CompanyDashboard = () => {
   const [projects, setProjects] = useState([]);
   const [applications, setApplications] = useState([]);
   const [companyProfile, setCompanyProfile] = useState(null);
+  const [activeStudents, setActiveStudents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   
@@ -27,7 +28,7 @@ const CompanyDashboard = () => {
           setCompanyProfile(profileDoc.data());
         }
         
-        // Get company's projects
+        // Get company's projects - SIMPLE QUERY
         const projectsQuery = query(
           collection(db, 'projects'),
           where('companyId', '==', currentUser.uid)
@@ -41,12 +42,11 @@ const CompanyDashboard = () => {
         
         setProjects(projectsData);
         
-        // Get all applications for company's projects
-        const projectIds = projectsData.map(project => project.id);
-        if (projectIds.length > 0) {
+        // Get all applications for company's projects - SIMPLE QUERY
+        if (projectsData.length > 0) {
           const applicationsQuery = query(
             collection(db, 'applications'),
-            where('projectId', 'in', projectIds.slice(0, 10)) // Firestore limit
+            where('companyId', '==', currentUser.uid)
           );
           
           const applicationsSnapshot = await getDocs(applicationsQuery);
@@ -58,7 +58,31 @@ const CompanyDashboard = () => {
           setApplications(applicationsData);
         }
         
+        // Get enrolled students from projects - SIMPLE ACCESS
+        const allStudentIds = new Set();
+        projectsData.forEach(project => {
+          (project.enrolledStudents || []).forEach(id => allStudentIds.add(id));
+        });
+        
+        // Fetch student profiles
+        const studentsData = [];
+        for (const studentId of allStudentIds) {
+          try {
+            const studentDoc = await getDoc(doc(db, 'studentProfiles', studentId));
+            if (studentDoc.exists()) {
+              studentsData.push({
+                id: studentId,
+                ...studentDoc.data()
+              });
+            }
+          } catch (error) {
+            console.error(`Error fetching student ${studentId}:`, error);
+          }
+        }
+        
+        setActiveStudents(studentsData);
         setLoading(false);
+        
       } catch (error) {
         console.error('Error fetching dashboard data:', error);
         setError('Failed to load dashboard data. Please try again.');

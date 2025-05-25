@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { collection, getDocs, query, where } from 'firebase/firestore';
+import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 import { AuthContext } from '../contexts/AuthContext';
 import Navigation from '../components/Navigation';
 import ApplicationModal from '../components/ApplicationModal';
+import { getProjectApplications } from '../services/applicationService';
 import { getProjectById } from '../services/projectService';
 
 const ProjectApplications = () => {
@@ -33,26 +34,17 @@ const ProjectApplications = () => {
           return;
         }
         
-        // Fetch applications for this specific project
-        const applicationsQ = query(
-          collection(db, 'applications'),
-          where('projectId', '==', projectId)
-        );
-        
-        const applicationsSnapshot = await getDocs(applicationsQ);
-        const applicationsList = applicationsSnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
+        // Fetch applications for this project - SIMPLE QUERY
+        const applications = await getProjectApplications(projectId);
         
         // Sort applications by date (newest first)
-        applicationsList.sort((a, b) => {
-          const aTime = a.createdAt?.seconds || 0;
-          const bTime = b.createdAt?.seconds || 0;
+        applications.sort((a, b) => {
+          const aTime = a.appliedAt?.seconds || 0;
+          const bTime = b.appliedAt?.seconds || 0;
           return bTime - aTime;
         });
         
-        setApplications(applicationsList);
+        setApplications(applications);
         setLoading(false);
       } catch (err) {
         console.error('Error fetching applications:', err);

@@ -3,8 +3,9 @@ import React, { useState, useEffect, useContext } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { AuthContext } from '../contexts/AuthContext';
 import Navigation from '../components/Navigation';
-import { doc, getDoc, collection, query, where, getDocs, updateDoc, setDoc, addDoc, serverTimestamp, arrayUnion, deleteDoc } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, getDocs, updateDoc, addDoc, serverTimestamp, arrayUnion } from 'firebase/firestore';
 import { db } from '../firebase';
+import { acceptApplication, getProjectApplications } from '../services/applicationService';
 
 // =============================================================================
 // SAFE DATA ACCESS HELPERS
@@ -95,216 +96,83 @@ const CompanyProjectManagement = () => {
           throw new Error('Project not found');
         }
         
-        const rawProjectData = projectDoc.data();
-        console.log('Raw project data:', rawProjectData);
-        
-        // SAFELY NORMALIZE PROJECT DATA
-        const projectData = {
-          id: projectDoc.id,
-          // Handle both old flat structure and new nested structure
-          title: safeGet(rawProjectData, 'basic.title', safeGet(rawProjectData, 'title', 'Untitled Project')),
-          description: safeGet(rawProjectData, 'basic.description', safeGet(rawProjectData, 'description', '')),
-          category: safeGet(rawProjectData, 'basic.category', safeGet(rawProjectData, 'category', 'Other')),
-          status: safeGet(rawProjectData, 'status.current', safeGet(rawProjectData, 'status', 'open')),
-          companyId: safeGet(rawProjectData, 'company.id', safeGet(rawProjectData, 'companyId', currentUser.uid)),
-          duration: safeGet(rawProjectData, 'requirements.duration', safeGet(rawProjectData, 'duration', '')),
-          compensation: safeGet(rawProjectData, 'compensation.amount', safeGet(rawProjectData, 'compensation', 0)),
-          isExperienceOnly: safeGet(rawProjectData, 'compensation.type', '') === 'unpaid' || safeGet(rawProjectData, 'isExperienceOnly', false),
-          
-          // SAFE ARRAY ACCESS
-          enrolledStudents: safeArray(
-            safeGet(rawProjectData, 'status.selectedStudents', 
-            safeGet(rawProjectData, 'enrolledStudents', []))
-          ),
-          
-          // SAFE TIMESTAMP HANDLING
-          createdAt: rawProjectData.createdAt || safeGet(rawProjectData, 'meta.createdAt', new Date()),
-          
-          // Keep all original data for compatibility
-          ...rawProjectData
-        };
-        
+        const projectData = { id: projectDoc.id, ...projectDoc.data() };
         setProject(projectData);
         
-        // SAFE STUDENT FETCHING
-        const enrolledStudentsIds = safeArray(projectData.enrolledStudents);
-        console.log('Enrolled student IDs:', enrolledStudentsIds);
-
-        if (enrolledStudentsIds.length > 0) {
+        // Get enrolled students - SIMPLE ACCESS
+        const enrolledStudentIds = projectData.enrolledStudents || [];
+        
+        if (enrolledStudentIds.length > 0) {
           const studentsData = [];
           
-          for (const studentId of enrolledStudentsIds) {
+          for (const studentId of enrolledStudentIds) {
             try {
-              console.log("Fetching student with ID:", studentId);
-              
-              // Get student profile
               const studentDoc = await getDoc(doc(db, 'studentProfiles', studentId));
-              
-              // Get user document for email
-              let email = '';
-              try {
-                const userDoc = await getDoc(doc(db, 'users', studentId));
-                if (userDoc.exists()) {
-                  email = safeString(userDoc.data().email);
-                }
-              } catch (error) {
-                console.error("Error fetching user email:", error);
-              }
+              const userDoc = await getDoc(doc(db, 'users', studentId));
               
               if (studentDoc.exists()) {
                 const studentData = studentDoc.data();
-                console.log("Student data found:", studentData);
+                const email = userDoc.exists() ? userDoc.data().email : '';
                 
-                // SAFELY PROCESS STUDENT DATA
                 studentsData.push({
                   id: studentId,
-                  fullName: safeString(
-                    safeGet(studentData, 'fullName', 
-                    safeGet(studentData, 'personal.fullName', 'Student'))
-                  ),
-                  displayName: safeString(
-                    safeGet(studentData, 'fullName', 
-                    safeGet(studentData, 'personal.fullName', 'Student'))
-                  ),
-                  photoURL: safeString(
-                    safeGet(studentData, 'photoURL', 
-                    safeGet(studentData, 'personal.photoURL', ''))
-                  ),
+                  fullName: studentData.fullName || 'Student',
                   email: email,
-                  major: safeString(
-                    safeGet(studentData, 'major', 
-                    safeGet(studentData, 'education.major', 'Not specified'))
-                  ),
-                  college: safeString(
-                    safeGet(studentData, 'college', 
-                    safeGet(studentData, 'education.college', ''))
-                  ),
-                  year: safeString(
-                    safeGet(studentData, 'year', 
-                    safeGet(studentData, 'education.year', 'Not specified'))
-                  ),
-                  bio: (() => {
-                    const bio = safeString(safeGet(studentData, 'bio', ''));
-                    return bio && bio !== '-' ? bio : 'No bio provided';
-                  })(),
-                  skills: safeArray(studentData.skills),
-                  progress: 0, // Will calculate later
+                  major: studentData.major || 'Not specified',
+                  college: studentData.college || '',
+                  photoURL: studentData.photoURL || '',
+                  bio: studentData.bio || 'No bio provided',
+                  skills: studentData.skills || [],
                   ...studentData
                 });
-              } else {
-                console.log("No student profile found for ID:", studentId);
-                // Add placeholder
-                studentsData.push({
-                  id: studentId,
-                  fullName: 'Student',
-                  displayName: 'Student',
-                  photoURL: '',
-                  email: email,
-                  major: 'Not specified',
-                  college: '',
-                  bio: 'No bio provided',
-                  skills: [],
-                  progress: 0
-                });
               }
-            } catch (studentError) {
-              console.error(`Error fetching student ${studentId}:`, studentError);
+            } catch (error) {
+              console.error(`Error fetching student ${studentId}:`, error);
             }
           }
           
-          console.log("Final processed students:", studentsData);
           setStudents(studentsData);
-          
-          if (studentsData.length > 0 && !activeStudent) {
+          if (studentsData.length > 0) {
             setActiveStudent(studentsData[0]);
           }
         }
         
-        // Get deliverables
-        try {
-          const deliverablesQuery = query(
-            collection(db, 'deliverables'),
-            where('projectId', '==', projectId)
-          );
-          
-          const deliverablesSnapshot = await getDocs(deliverablesQuery);
-          const deliverablesData = deliverablesSnapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-          }));
-          
-          // Sort deliverables by due date
-          deliverablesData.sort((a, b) => {
-            try {
-              if (a.dueDate && b.dueDate) {
-                const aDate = a.dueDate.seconds ? new Date(a.dueDate.seconds * 1000) : new Date(a.dueDate);
-                const bDate = b.dueDate.seconds ? new Date(b.dueDate.seconds * 1000) : new Date(b.dueDate);
-                return aDate - bDate;
-              }
-              return 0;
-            } catch (e) {
-              return 0;
-            }
-          });
-          
-          setDeliverables(deliverablesData);
-        } catch (error) {
-          console.error('Error fetching deliverables:', error);
-          setDeliverables([]);
-        }
+        // Get pending applications - SIMPLE QUERY
+        const applicationsQuery = query(
+          collection(db, 'applications'),
+          where('projectId', '==', projectId),
+          where('status', '==', 'pending')
+        );
         
-        // Get pending applications
-        try {
-          const applicationsQuery = query(
-            collection(db, 'applications'),
-            where('projectId', '==', projectId),
-            where('status', '==', 'pending')
-          );
-          
-          const applicationsSnapshot = await getDocs(applicationsQuery);
-          const applicationsData = applicationsSnapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-          }));
-          
-          // Fetch student profiles for applications
-          const applicationsWithProfiles = await Promise.all(
-            applicationsData.map(async (app) => {
-              try {
-                const studentDoc = await getDoc(doc(db, 'studentProfiles', app.studentId));
-                if (studentDoc.exists()) {
-                  return {
-                    ...app,
-                    studentProfile: { id: studentDoc.id, ...studentDoc.data() }
-                  };
-                }
-                return app;
-              } catch (error) {
-                console.error('Error fetching student profile for application:', error);
-                return app;
-              }
-            })
-          );
-          
-          setPendingApplications(applicationsWithProfiles);
-        } catch (error) {
-          console.error('Error fetching applications:', error);
-          setPendingApplications([]);
-        }
+        const applicationsSnapshot = await getDocs(applicationsQuery);
+        const applicationsData = applicationsSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
         
-        // Get messages for active student
-        if (activeStudent) {
-          await fetchMessages(activeStudent.id);
-        }
-        
-        // Get submissions
-        await fetchSubmissions();
-        
+        setPendingApplications(applicationsData);
         setLoading(false);
+        
       } catch (error) {
         console.error('Error fetching project data:', error);
-        setError(safeString(error.message, 'Unknown error occurred'));
+        setError(error.message);
         setLoading(false);
+      }
+    };
+    
+    // Application acceptance - SIMPLE
+    const handleAcceptApplication = async (application) => {
+      try {
+        await acceptApplication(application.id, application.studentId, projectId);
+        
+        // Refresh data
+        await fetchProjectData();
+        
+        alert(`${application.studentName} has been accepted! They will see a congratulations modal.`);
+        
+      } catch (error) {
+        console.error('Error accepting application:', error);
+        alert('Error accepting application. Please try again.');
       }
     };
     

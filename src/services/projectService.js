@@ -1,4 +1,3 @@
-// src/services/projectService.js - FIXED VERSION
 import { 
   collection, 
   addDoc, 
@@ -11,129 +10,58 @@ import {
   updateDoc, 
   arrayUnion, 
   serverTimestamp,
-  deleteDoc,
-  setDoc
+  deleteDoc
 } from 'firebase/firestore';
 import { db } from '../firebase';
 
-// =============================================================================
-// UTILITY FUNCTIONS
-// =============================================================================
-
-function generateDocumentId(type, name, length = 6) {
-  const slug = name
-    ?.toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, '')
-    .replace(/\s+/g, '')
-    .substring(0, 10) || 'unknown';
-  
-  const randomId = Math.random().toString(36).substring(2, 2 + length);
-  
-  const prefixes = {
-    company: 'comp',
-    student: 'stu',
-    project: 'proj'
-  };
-  
-  return `${prefixes[type]}_${slug}_${randomId}`;
-}
-
-function generateSlug(text) {
-  if (!text) return '';
-  return text
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, '')
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
-    .trim();
-}
-
-function parseSkills(skillsString) {
-  if (Array.isArray(skillsString)) return skillsString;
-  if (!skillsString) return [];
-  return skillsString.split(',').map(s => s.trim()).filter(Boolean);
-}
-
-// =============================================================================
-// PROJECT SERVICES
-// =============================================================================
-
 /**
- * Create a new project with structured ID
+ * Create a new project
  */
 export const createProject = async (companyId, projectData) => {
   try {
-    console.log("Creating project:", projectData);
-    
-    const projectId = generateDocumentId('project', projectData.title);
-    
     // Get company info for denormalization
-    const companyDoc = await getDoc(doc(db, 'companies', companyId));
-    let companyInfo = { name: "Company", email: "" };
+    const companyDoc = await getDoc(doc(db, 'companyProfiles', companyId));
+    const companyName = companyDoc.exists() ? companyDoc.data().companyName : 'Company';
     
-    if (companyDoc.exists()) {
-      const companyData = companyDoc.data();
-      companyInfo = {
-        name: companyData.basic?.name || "Company",
-        email: companyData.contacts?.primary?.email || ""
-      };
-    }
-    
+    // FLAT PROJECT STRUCTURE
     const project = {
-      basic: {
-        title: projectData.title?.trim() || "",
-        slug: generateSlug(projectData.title),
-        description: projectData.description?.trim() || "",
-        category: projectData.category || "",
-        tags: parseSkills(projectData.skills)
-      },
-      company: {
-        id: companyId,
-        name: companyInfo.name,
-        contactEmail: companyInfo.email
-      },
-      requirements: {
-        skills: parseSkills(projectData.skills),
-        experience: "intermediate",
-        hoursPerWeek: 15,
-        duration: projectData.duration || "",
-        startDate: null
-      },
-      compensation: {
-        type: projectData.isExperienceOnly ? "unpaid" : "paid",
-        amount: projectData.isExperienceOnly ? 0 : parseFloat(projectData.compensation) || 0,
-        currency: "USD",
-        schedule: "milestone"
-      },
-      application: {
-        requiresCoverLetter: true,
-        requiresPortfolio: false,
-        requiresVideo: projectData.requireVideoIntro || false,
-        customQuestions: projectData.applicationQuestion ? [projectData.applicationQuestion] : [],
-        deadline: null
-      },
-      status: {
-        current: "open",
-        applicationsCount: 0,
-        selectedStudents: [],
-        startedAt: null,
-        completedAt: null
-      },
-      meta: {
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-        featured: false,
-        priority: "normal",
-        version: 1
-      }
+      // Basic info
+      title: projectData.title?.trim() || '',
+      description: projectData.description?.trim() || '',
+      category: projectData.category || '',
+      
+      // Company info
+      companyId: companyId,
+      companyName: companyName,
+      
+      // Requirements
+      skills: Array.isArray(projectData.skills) ? projectData.skills : 
+              projectData.skills?.split(',').map(s => s.trim()) || [],
+      duration: projectData.duration || '',
+      
+      // Compensation
+      compensation: projectData.isExperienceOnly ? 0 : parseFloat(projectData.compensation) || 0,
+      isExperienceOnly: projectData.isExperienceOnly || false,
+      
+      // Status - all flat
+      status: 'open',
+      applicationsCount: 0,
+      enrolledStudents: [],
+      applicants: [], // For backward compatibility
+      
+      // Application requirements
+      applicationQuestion: projectData.applicationQuestion || '',
+      requireVideoIntro: projectData.requireVideoIntro || false,
+      
+      // Timestamps
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
     };
 
-    await setDoc(doc(db, 'projects', projectId), project);
+    const docRef = await addDoc(collection(db, 'projects'), project);
+    return docRef.id;
     
-    console.log("Project created with ID:", projectId);
-    return projectId;
   } catch (error) {
-    console.error("Error creating project:", error);
     throw new Error('Failed to create project: ' + error.message);
   }
 };
@@ -143,18 +71,12 @@ export const createProject = async (companyId, projectData) => {
  */
 export const getProjectById = async (projectId) => {
   try {
-    console.log("Getting project by ID:", projectId);
     const projectDoc = await getDoc(doc(db, 'projects', projectId));
-    
     if (!projectDoc.exists()) {
-      console.log("Project not found");
       throw new Error('Project not found');
     }
-    
-    console.log("Project found:", projectDoc.data());
     return { id: projectDoc.id, ...projectDoc.data() };
   } catch (error) {
-    console.error("Error fetching project:", error);
     throw new Error('Failed to fetch project: ' + error.message);
   }
 };
@@ -164,21 +86,20 @@ export const getProjectById = async (projectId) => {
  */
 export const getProjects = async (filters = {}) => {
   try {
-    console.log("Getting projects with filters:", filters);
     let projectsQuery = collection(db, 'projects');
     const constraints = [];
     
     // Apply filters
     if (filters.category && filters.category !== 'all') {
-      constraints.push(where('basic.category', '==', filters.category));
+      constraints.push(where('category', '==', filters.category));
     }
     
     if (filters.companyId) {
-      constraints.push(where('company.id', '==', filters.companyId));
+      constraints.push(where('companyId', '==', filters.companyId));
     }
     
     if (filters.status) {
-      constraints.push(where('status.current', '==', filters.status));
+      constraints.push(where('status', '==', filters.status));
     }
     
     // Build query with constraints
@@ -187,21 +108,16 @@ export const getProjects = async (filters = {}) => {
     }
     
     // Add sorting
-    const sortField = filters.sortBy || 'meta.createdAt';
+    const sortField = filters.sortBy || 'createdAt';
     const sortDirection = filters.sortDirection || 'desc';
     projectsQuery = query(projectsQuery, orderBy(sortField, sortDirection));
     
-    console.log("Executing Firestore query");
     const querySnapshot = await getDocs(projectsQuery);
-    const projects = querySnapshot.docs.map(doc => ({ 
-      id: doc.id, 
-      ...doc.data() 
+    return querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
     }));
-    
-    console.log("Projects found:", projects.length);
-    return projects;
   } catch (error) {
-    console.error("Error fetching projects:", error);
     throw new Error('Failed to fetch projects: ' + error.message);
   }
 };
@@ -211,33 +127,16 @@ export const getProjects = async (filters = {}) => {
  */
 export const updateProject = async (projectId, updateData) => {
   try {
-    const updates = {};
+    const updates = { ...updateData };
     
-    // Only update provided fields
-    if (updateData.title) {
-      updates['basic.title'] = updateData.title.trim();
-      updates['basic.slug'] = generateSlug(updateData.title);
-    }
-    if (updateData.description) {
-      updates['basic.description'] = updateData.description.trim();
-    }
-    if (updateData.category) {
-      updates['basic.category'] = updateData.category;
-    }
+    // Process skills if provided
     if (updateData.skills) {
-      updates['basic.tags'] = parseSkills(updateData.skills);
-      updates['requirements.skills'] = parseSkills(updateData.skills);
-    }
-    if (updateData.duration) {
-      updates['requirements.duration'] = updateData.duration;
-    }
-    if (updateData.compensation !== undefined) {
-      updates['compensation.amount'] = parseFloat(updateData.compensation) || 0;
-      updates['compensation.type'] = updateData.compensation > 0 ? "paid" : "unpaid";
+      updates.skills = Array.isArray(updateData.skills) ? updateData.skills : 
+                      updateData.skills.split(',').map(s => s.trim());
     }
     
     // Always update timestamp
-    updates['meta.updatedAt'] = serverTimestamp();
+    updates.updatedAt = serverTimestamp();
     
     await updateDoc(doc(db, 'projects', projectId), updates);
     return true;
@@ -252,10 +151,8 @@ export const updateProject = async (projectId, updateData) => {
 export const deleteProject = async (projectId) => {
   try {
     await deleteDoc(doc(db, 'projects', projectId));
-    console.log("Project deleted:", projectId);
     return true;
   } catch (error) {
-    console.error("Error deleting project:", error);
     throw new Error('Failed to delete project: ' + error.message);
   }
 };
@@ -265,12 +162,10 @@ export const deleteProject = async (projectId) => {
  */
 export const addStudentToProject = async (projectId, studentId) => {
   try {
-    const projectRef = doc(db, 'projects', projectId);
-    
-    await updateDoc(projectRef, {
-      'status.selectedStudents': arrayUnion(studentId),
-      'status.current': 'in-progress',
-      'meta.updatedAt': serverTimestamp()
+    await updateDoc(doc(db, 'projects', projectId), {
+      enrolledStudents: arrayUnion(studentId),
+      status: 'in-progress',
+      updatedAt: serverTimestamp()
     });
     
     return true;
@@ -280,22 +175,125 @@ export const addStudentToProject = async (projectId, studentId) => {
 };
 
 /**
+ * Remove student from project
+ */
+export const removeStudentFromProject = async (projectId, studentId) => {
+  try {
+    const projectDoc = await getDoc(doc(db, 'projects', projectId));
+    if (!projectDoc.exists()) {
+      throw new Error('Project not found');
+    }
+    
+    const projectData = projectDoc.data();
+    const enrolledStudents = (projectData.enrolledStudents || []).filter(id => id !== studentId);
+    
+    await updateDoc(doc(db, 'projects', projectId), {
+      enrolledStudents: enrolledStudents,
+      updatedAt: serverTimestamp()
+    });
+    
+    return true;
+  } catch (error) {
+    throw new Error('Failed to remove student from project: ' + error.message);
+  }
+};
+
+/**
  * Get projects for a company
  */
 export const getCompanyProjects = async (companyId) => {
   try {
-    const projectsQuery = query(
+    const q = query(
       collection(db, 'projects'),
-      where('company.id', '==', companyId),
-      orderBy('meta.createdAt', 'desc')
+      where('companyId', '==', companyId),
+      orderBy('createdAt', 'desc')
     );
     
-    const querySnapshot = await getDocs(projectsQuery);
-    return querySnapshot.docs.map(doc => ({ 
-      id: doc.id, 
-      ...doc.data() 
-    }));
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
   } catch (error) {
     throw new Error('Failed to fetch company projects: ' + error.message);
+  }
+};
+
+/**
+ * Get open projects (available for applications)
+ */
+export const getOpenProjects = async () => {
+  try {
+    const q = query(
+      collection(db, 'projects'),
+      where('status', '==', 'open'),
+      orderBy('createdAt', 'desc')
+    );
+    
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  } catch (error) {
+    throw new Error('Failed to fetch open projects: ' + error.message);
+  }
+};
+
+/**
+ * Close project (stop accepting applications)
+ */
+export const closeProject = async (projectId) => {
+  try {
+    await updateDoc(doc(db, 'projects', projectId), {
+      status: 'closed',
+      updatedAt: serverTimestamp()
+    });
+    return true;
+  } catch (error) {
+    throw new Error('Failed to close project: ' + error.message);
+  }
+};
+
+/**
+ * Complete project
+ */
+export const completeProject = async (projectId) => {
+  try {
+    await updateDoc(doc(db, 'projects', projectId), {
+      status: 'completed',
+      completedAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    });
+    return true;
+  } catch (error) {
+    throw new Error('Failed to complete project: ' + error.message);
+  }
+};
+
+/**
+ * Get project statistics
+ */
+export const getProjectStats = async (projectId) => {
+  try {
+    const projectDoc = await getDoc(doc(db, 'projects', projectId));
+    if (!projectDoc.exists()) {
+      throw new Error('Project not found');
+    }
+    
+    const projectData = projectDoc.data();
+    
+    // Get applications count
+    const applicationsQuery = query(
+      collection(db, 'applications'),
+      where('projectId', '==', projectId)
+    );
+    const applicationsSnapshot = await getDocs(applicationsQuery);
+    
+    const stats = {
+      totalApplications: applicationsSnapshot.size,
+      enrolledStudentsCount: (projectData.enrolledStudents || []).length,
+      status: projectData.status,
+      createdAt: projectData.createdAt,
+      updatedAt: projectData.updatedAt
+    };
+    
+    return stats;
+  } catch (error) {
+    throw new Error('Failed to get project statistics: ' + error.message);
   }
 };

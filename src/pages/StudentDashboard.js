@@ -30,7 +30,7 @@ const StudentDashboard = () => {
           setStudentProfile(profileDoc.data());
         }
         
-        // Get applications
+        // Get applications - SIMPLE QUERY
         const applicationsQuery = query(
           collection(db, 'applications'),
           where('studentId', '==', currentUser.uid),
@@ -45,42 +45,38 @@ const StudentDashboard = () => {
         
         setApplications(applicationsData);
         
-        // Check for newly accepted applications (real implementation)
-        const checkForNewAcceptance = async () => {
-          const recentlyAccepted = applicationsData.find(app => 
-            app.status === 'accepted' && 
-            !app.modalShown &&
-            // Check if accepted in last 7 days to catch recent acceptances
-            app.acceptedAt && 
-            new Date() - new Date(app.acceptedAt) < 7 * 24 * 60 * 60 * 1000
-          );
-          
-          if (recentlyAccepted) {
-            // Get project details for the modal
-            const projectRef = doc(db, 'projects', recentlyAccepted.projectId);
-            const projectSnap = await getDoc(projectRef);
-            
-            if (projectSnap.exists()) {
-              const projectData = projectSnap.data();
-              setActiveProject({
-                id: recentlyAccepted.projectId,
-                ...projectData,
-                applicationId: recentlyAccepted.id
-              });
-              
-              // Show the modal
-              setShowAcceptedModal(true);
-              
-              // Mark modal as shown to prevent showing again
-              const applicationRef = doc(db, 'applications', recentlyAccepted.id);
-              await updateDoc(applicationRef, {
-                modalShown: true
-              });
-            }
-          }
-        };
+        // Check for newly accepted applications - SIMPLE ACCESS
+        const recentlyAccepted = applicationsData.find(app => 
+          app.status === 'accepted' && 
+          !app.modalShown &&
+          app.acceptedAt && 
+          new Date() - new Date(app.acceptedAt) < 7 * 24 * 60 * 60 * 1000
+        );
         
-        // Get the current active project (accepted application)
+        if (recentlyAccepted) {
+          // Get project details
+          const projectRef = doc(db, 'projects', recentlyAccepted.projectId);
+          const projectSnap = await getDoc(projectRef);
+          
+          if (projectSnap.exists()) {
+            const projectData = projectSnap.data();
+            setActiveProject({
+              id: recentlyAccepted.projectId,
+              ...projectData, // All flat now!
+              applicationId: recentlyAccepted.id
+            });
+            
+            setShowAcceptedModal(true);
+            
+            // Mark modal as shown
+            const applicationRef = doc(db, 'applications', recentlyAccepted.id);
+            await updateDoc(applicationRef, {
+              modalShown: true
+            });
+          }
+        }
+        
+        // Get active project from accepted applications
         const acceptedApplication = applicationsData.find(app => app.status === 'accepted');
         
         if (acceptedApplication) {
@@ -96,9 +92,6 @@ const StudentDashboard = () => {
             });
           }
         }
-        
-        // Check for new acceptances after loading data
-        await checkForNewAcceptance();
         
         setLoading(false);
       } catch (error) {
