@@ -1,6 +1,6 @@
-// src/pages/Register.js - Fixed navigation logic
+// src/pages/Register.js - Fixed to handle dynamic user type changes
 import React, { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { setDoc, doc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -9,16 +9,15 @@ import Navigation from '../components/Navigation';
 
 const Register = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   
-  // Get user type from URL parameters
-  const urlParams = new URLSearchParams(window.location.search);
-  const userTypeFromUrl = urlParams.get('type');
+  // Get user type from URL parameters and watch for changes
+  const [userType, setUserType] = useState('student');
   
   // Form states
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [userType] = useState(userTypeFromUrl || 'student'); // Fixed userType, no setter
   const [fullName, setFullName] = useState('');
   const [college, setCollege] = useState('');
   const [major, setMajor] = useState('');
@@ -35,6 +34,37 @@ const Register = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [step, setStep] = useState(1);
+  
+  // Watch for URL parameter changes and update userType
+  useEffect(() => {
+    const urlParams = new URLSearchParams(location.search);
+    const userTypeFromUrl = urlParams.get('type');
+    
+    if (userTypeFromUrl && (userTypeFromUrl === 'student' || userTypeFromUrl === 'company')) {
+      setUserType(userTypeFromUrl);
+      
+      // Reset form when switching user types
+      setStep(1);
+      setError('');
+      setEmail('');
+      setPassword('');
+      setConfirmPassword('');
+      setFullName('');
+      setCollege('');
+      setMajor('');
+      setOtherCollege('');
+      setOtherMajor('');
+      setCompanyName('');
+      setIndustry('');
+      setProfilePhoto(null);
+      setCompanyLogo(null);
+      setPhotoPreview(null);
+      setLogoPreview(null);
+    } else {
+      // If no valid user type in URL, redirect to login
+      navigate('/login');
+    }
+  }, [location.search, navigate]);
   
   // Lists of colleges and majors
   const colleges = [
@@ -110,13 +140,6 @@ const Register = () => {
     'Other'
   ];
   
-  // Add validation for user type on component mount
-  useEffect(() => {
-    if (!userTypeFromUrl || (userTypeFromUrl !== 'student' && userTypeFromUrl !== 'company')) {
-      // If no valid user type in URL, redirect to login or show error
-      navigate('/login');
-    }
-  }, [userTypeFromUrl, navigate]);
   const handlePhotoChange = (e) => {
     if (e.target.files[0]) {
       setProfilePhoto(e.target.files[0]);
