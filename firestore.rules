@@ -1,6 +1,84 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    
+    // Projects collection - Allow public read access for browsing
+    match /projects/{projectId} {
+      // Anyone can read projects (for public browsing)
+      allow read: if true;
+      
+      // Only authenticated users can create projects
+      allow create: if request.auth != null && 
+                   request.auth.uid == resource.data.companyId;
+      
+      // Only project owner can update/delete
+      allow update, delete: if request.auth != null && 
+                           request.auth.uid == resource.data.companyId;
+    }
+    
+    // Company profiles - Allow public read for project details
+    match /companyProfiles/{userId} {
+      // Anyone can read company profiles (for project listings)
+      allow read: if true;
+      
+      // Only the company can write their own profile
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Student profiles - Keep private except for companies viewing applications
+    match /studentProfiles/{userId} {
+      // Student can read/write their own profile
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+      
+      // Companies can read student profiles when reviewing applications
+      allow read: if request.auth != null;
+    }
+    
+    // Applications - Only between student and company
+    match /applications/{applicationId} {
+      // Student who applied can read their own application
+      allow read, write: if request.auth != null && 
+                         request.auth.uid == resource.data.studentId;
+      
+      // Company can read applications for their projects
+      allow read, write: if request.auth != null && 
+                         request.auth.uid == resource.data.companyId;
+    }
+    
+    // Messages - Only between participants
+    match /messages/{messageId} {
+      allow read, write: if request.auth != null && 
+                         (request.auth.uid == resource.data.senderId || 
+                          request.auth.uid == resource.data.recipientId ||
+                          request.auth.uid in resource.data.participants);
+    }
+    
+    // Deliverables - Project participants only
+    match /deliverables/{deliverableId} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // Submissions - Project participants only
+    match /submissions/{submissionId} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // Resources - Project participants only
+    match /resources/{resourceId} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // Activities - Project participants only
+    match /activities/{activityId} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // Users collection - Private to user
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // All other collections require authentication
     match /{document=**} {
       allow read, write: if request.auth != null;
     }

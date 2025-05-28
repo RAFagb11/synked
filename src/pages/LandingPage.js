@@ -1,13 +1,26 @@
 // src/pages/LandingPage.js
-import React from "react";
-import { useContext } from 'react';
-import { Link } from "react-router-dom";
+import React, { useContext, useEffect } from 'react';
+import { Link, useLocation } from 'react-router-dom';
 import { AuthContext } from '../contexts/AuthContext';
-import Navigation from "../components/Navigation";
-import Footer from "../components/Footer"; // Import the new Footer component
+import Navigation from '../components/Navigation';
+import Footer from '../components/Footer';
 
 const LandingPage = () => {
   const { currentUser, userType } = useContext(AuthContext);
+  const location = useLocation();
+
+  useEffect(() => {
+    // Handle scroll to section when navigating from other pages
+    if (location.state?.scrollTo) {
+      const element = document.getElementById(location.state.scrollTo);
+      if (element) {
+        setTimeout(() => {
+          element.scrollIntoView({ behavior: 'smooth' });
+        }, 100);
+      }
+    }
+  }, [location.state]);
+
   return (
     <>
       <Navigation />
@@ -98,38 +111,47 @@ const LandingPage = () => {
         <div className="container">
           <div className="section-header">
             <div className="feature-badge">Process</div>
-            <h2>Simple and Effective</h2>
-            <p>Four easy steps to connect talent with opportunity</p>
+            <h2>How It Works</h2>
+            <p>Simple steps to start collaborating</p>
           </div>
-          <div className="steps">
-            <div className="step-line"></div>
-            <div className="step">
+          <div className="steps-grid">
+            <div className="step-card">
               <div className="step-number">1</div>
-              <h3>Post a Project</h3>
-              <p>Companies describe their needs, timeline, and compensation</p>
+              <h3>Create Profile</h3>
+              <p>
+                Companies post projects and requirements. Students create
+                detailed profiles showcasing their skills and interests.
+              </p>
             </div>
-            <div className="step">
+            <div className="step-card">
               <div className="step-number">2</div>
-              <h3>Get Matched</h3>
-              <p>Our system connects projects with qualified students</p>
+              <h3>Smart Match</h3>
+              <p>
+                Our platform suggests the best matches based on skills,
+                experience level, and project requirements.
+              </p>
             </div>
-            <div className="step">
+            <div className="step-card">
               <div className="step-number">3</div>
               <h3>Collaborate</h3>
-              <p>Work together through our platform with integrated tools</p>
-            </div>
-            <div className="step">
-              <div className="step-number">4</div>
-              <h3>Complete & Review</h3>
               <p>
-                Finish the project and provide feedback for future opportunities
+                Work together through our platform with integrated tools for
+                smooth communication and project management.
+              </p>
+            </div>
+            <div className="step-card">
+              <div className="step-number">4</div>
+              <h3>Succeed Together</h3>
+              <p>
+                Companies get valuable work done while students gain real
+                experience. Win-win!
               </p>
             </div>
           </div>
         </div>
       </section>
 
-      {/* Success Stories Section */}
+      {/* Testimonials Section */}
       <section className="testimonials" id="testimonials">
         <div className="container">
           <div className="section-header">
@@ -225,7 +247,6 @@ const LandingPage = () => {
         </div>
       </section>
 
-      {/* Use the new Footer component instead of the inline footer */}
       <Footer />
     </>
   );

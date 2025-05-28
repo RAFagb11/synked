@@ -1,8 +1,23 @@
 // src/components/Footer.js
 import React from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 
 const Footer = () => {
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  const handleSectionLink = (sectionId, e) => {
+    e.preventDefault();
+    if (location.pathname === '/') {
+      const element = document.getElementById(sectionId);
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth' });
+      }
+    } else {
+      navigate('/', { state: { scrollTo: sectionId } });
+    }
+  };
+
   return (
     <footer>
       <div className="container">
@@ -32,7 +47,7 @@ const Footer = () => {
             <h3>For Companies</h3>
             <ul>
               <li>
-                <Link to="/#how-it-works">How It Works</Link>
+                <a href="#how-it-works" onClick={(e) => handleSectionLink('how-it-works', e)}>How It Works</a>
               </li>
               <li>
                 <Link to="/pricing">Pricing Plans</Link>
@@ -41,7 +56,7 @@ const Footer = () => {
                 <Link to="/post-project">Post a Project</Link>
               </li>
               <li>
-                <Link to="/#testimonials">Success Stories</Link>
+                <a href="#testimonials" onClick={(e) => handleSectionLink('testimonials', e)}>Success Stories</a>
               </li>
             </ul>
           </div>

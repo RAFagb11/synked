@@ -8,6 +8,8 @@ import { doc, getDoc, collection, query, where, getDocs, updateDoc, addDoc, serv
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { db, storage } from '../firebase';
 import { acceptApplication, getProjectApplications } from '../services/applicationService';
+import { NotificationContext } from '../contexts/NotificationContext';
+import { Timestamp } from 'firebase/firestore';
 
 // =============================================================================
 // SAFE DATA ACCESS HELPERS
@@ -39,6 +41,7 @@ const CompanyProjectManagement = () => {
   const { projectId } = useParams();
   const { currentUser } = useContext(AuthContext);
   const navigate = useNavigate();
+  const { createNotification } = useContext(NotificationContext);
   
   const [project, setProject] = useState(null);
   const [students, setStudents] = useState([]);
@@ -462,6 +465,17 @@ const CompanyProjectManagement = () => {
       });
       
       setDeliverables(deliverablesData);
+
+      // Notify all students in the project
+      for (const student of students) {
+        await createNotification(
+          student.id,
+          'New Assignment',
+          `A new assignment "${deliverableData.title}" has been added to your project.`,
+          'assignment'
+        );
+      }
+
     } catch (error) {
       console.error('Error adding deliverable:', error);
     }
@@ -844,6 +858,30 @@ const CompanyProjectManagement = () => {
       setPendingApplications(applicationsWithProfiles);
     } catch (error) {
       console.error('Error rejecting application:', error);
+    }
+  };
+  
+  const handleSubmissionStatusUpdate = async (submissionId, newStatus, studentId) => {
+    try {
+      await updateDoc(doc(db, 'submissions', submissionId), {
+        status: newStatus,
+        updatedAt: Timestamp.now()
+      });
+
+      // Send notification to student
+      const message = newStatus === 'approved' 
+        ? 'Your assignment has been approved! Great work!' 
+        : 'Your assignment needs some revisions. Please check the feedback.';
+
+      await createNotification(
+        studentId,
+        'Assignment Update',
+        message,
+        'assignment'
+      );
+
+    } catch (error) {
+      console.error('Error updating submission:', error);
     }
   };
   

@@ -1,7 +1,7 @@
 // src/firebase.js - Complete fix to remove the problematic test connection
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
+import { getFirestore, collection } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 
 // Firebase configuration using environment variables
@@ -54,6 +54,13 @@ try {
 
 // REMOVED: The problematic test connection that was causing permissions errors
 // The connection will be tested when users actually authenticate and use the app
+
+// Collection references
+export const projectsRef = collection(db, 'projects');
+export const applicationsRef = collection(db, 'applications');
+export const studentProfilesRef = collection(db, 'studentProfiles');
+export const companyProfilesRef = collection(db, 'companyProfiles');
+export const notificationsRef = collection(db, 'notifications');
 
 export { auth, db, storage };
 export default app;
