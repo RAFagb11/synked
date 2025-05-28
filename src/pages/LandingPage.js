@@ -114,8 +114,8 @@ const LandingPage = () => {
             <h2>How It Works</h2>
             <p>Simple steps to start collaborating</p>
           </div>
-          <div className="steps-grid">
-            <div className="step-card">
+          <div className="steps">
+            <div className="step">
               <div className="step-number">1</div>
               <h3>Create Profile</h3>
               <p>
@@ -123,7 +123,7 @@ const LandingPage = () => {
                 detailed profiles showcasing their skills and interests.
               </p>
             </div>
-            <div className="step-card">
+            <div className="step">
               <div className="step-number">2</div>
               <h3>Smart Match</h3>
               <p>
@@ -131,7 +131,7 @@ const LandingPage = () => {
                 experience level, and project requirements.
               </p>
             </div>
-            <div className="step-card">
+            <div className="step">
               <div className="step-number">3</div>
               <h3>Collaborate</h3>
               <p>
@@ -139,7 +139,7 @@ const LandingPage = () => {
                 smooth communication and project management.
               </p>
             </div>
-            <div className="step-card">
+            <div className="step">
               <div className="step-number">4</div>
               <h3>Succeed Together</h3>
               <p>
@@ -147,6 +147,7 @@ const LandingPage = () => {
                 experience. Win-win!
               </p>
             </div>
+            <div className="step-line"></div>
           </div>
         </div>
       </section>
