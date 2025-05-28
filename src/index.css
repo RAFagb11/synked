@@ -11,12 +11,14 @@
   --success: #22c55e;
   --warning: #fbbf24;
   --danger: #ef4444;
+  font-size: 13px; /* Base font size reduced to ~80% of 16px */
 }
 
 body {
   background-color: var(--light);
   color: var(--dark);
   line-height: 1.6;
+  font-size: 1rem;
   transform: scale(0.8);
   transform-origin: top;
   min-height: 125vh;
@@ -31,11 +33,18 @@ body {
 }
 
 .container {
-  width: 90%;
-  max-width: 1200px;
+  width: 80%;
+  max-width: 1600px; /* Increased to compensate for smaller scale */
   margin: 0 auto;
   padding: 0 20px;
 }
+
+/* Update font sizes to use rem units */
+h1 { font-size: 4rem; }
+h2 { font-size: 3rem; }
+h3 { font-size: 2rem; }
+h4 { font-size: 1.5rem; }
+p { font-size: 1.15rem; }
 
 header {
   background-color: white;
@@ -150,7 +159,7 @@ nav {
 }
 
 .hero {
-  padding: 80px 0;
+  padding: 4rem 0;
   background: linear-gradient(135deg, #f5f7ff 0%, #eef1ff 100%);
   position: relative;
   overflow: hidden;
@@ -194,7 +203,7 @@ nav {
 }
 
 .hero-content h1 {
-  font-size: 52px;
+  font-size: 4rem;
   line-height: 1.2;
   margin-bottom: 20px;
   background: linear-gradient(to right, var(--primary), var(--gradient-end));
@@ -204,7 +213,7 @@ nav {
 }
 
 .hero-content p {
-  font-size: 18px;
+  font-size: 1.4rem;
   margin-bottom: 30px;
   color: #555;
 }
@@ -242,7 +251,7 @@ nav {
 }
 
 .features {
-  padding: 100px 0;
+  padding: 6rem 0;
   background-color: white;
   position: relative;
 }
@@ -253,7 +262,7 @@ nav {
 }
 
 .section-header h2 {
-  font-size: 38px;
+  font-size: 3rem;
   margin-bottom: 15px;
   background: linear-gradient(to right, var(--primary), var(--gradient-end));
   -webkit-background-clip: text;
@@ -262,7 +271,7 @@ nav {
 }
 
 .section-header p {
-  font-size: 18px;
+  font-size: 1.4rem;
   color: #666;
   max-width: 700px;
   margin: 0 auto;
@@ -333,7 +342,7 @@ nav {
 }
 
 .how-it-works {
-  padding: 100px 0;
+  padding: 6rem 0;
   background-color: #f5f7ff;
   position: relative;
   overflow: hidden;
@@ -414,7 +423,7 @@ nav {
 }
 
 .testimonials {
-  padding: 100px 0;
+  padding: 6rem 0;
   background-color: white;
   position: relative;
 }
@@ -504,7 +513,7 @@ nav {
 }
 
 .cta {
-  padding: 120px 0;
+  padding: 7rem 0;
   background: linear-gradient(
     135deg,
     var(--gradient-start),
