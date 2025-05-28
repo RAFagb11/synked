@@ -1,6 +1,6 @@
-// src/pages/StudentProjectPortal.js
+// src/pages/StudentProjectPortal.js - Redesigned with Company Management Layout Pattern
 import React, { useState, useEffect, useContext } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { AuthContext } from '../contexts/AuthContext';
 import Navigation from '../components/Navigation';
 import { doc, getDoc, collection, query, where, getDocs, updateDoc, addDoc, serverTimestamp } from 'firebase/firestore';
@@ -12,6 +12,7 @@ const StudentProjectPortal = () => {
   const { currentUser } = useContext(AuthContext);
   const navigate = useNavigate();
   
+  // State management
   const [project, setProject] = useState(null);
   const [company, setCompany] = useState(null);
   const [deliverables, setDeliverables] = useState([]);
@@ -23,9 +24,13 @@ const StudentProjectPortal = () => {
   const [submission, setSubmission] = useState({ content: '', file: null });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [activities, setActivities] = useState([]);
+  const [resources, setResources] = useState([]);
+  const [activeTab, setActiveTab] = useState('overview');
+  const [previewResource, setPreviewResource] = useState(null);
+  const [showPreview, setShowPreview] = useState(false);
 
-    // Fetch project, company, and deliverables data
-useEffect(() => {
+  // Fetch all project data
+  useEffect(() => {
     const fetchProjectData = async () => {
       try {
         setLoading(true);
@@ -45,7 +50,7 @@ useEffect(() => {
           setCompany({ id: companyDoc.id, ...companyDoc.data() });
         }
         
-        // Get deliverables
+        // Get deliverables and sort by due date
         const deliverablesQuery = query(
           collection(db, 'deliverables'),
           where('projectId', '==', projectId)
@@ -57,24 +62,26 @@ useEffect(() => {
           ...doc.data()
         }));
         
-        // Sort deliverables by due date
+        // Sort by due date (earliest first)
         deliverablesData.sort((a, b) => {
           if (a.dueDate && b.dueDate) {
-            return new Date(a.dueDate) - new Date(b.dueDate);
+            const dateA = a.dueDate.seconds ? new Date(a.dueDate.seconds * 1000) : new Date(a.dueDate);
+            const dateB = b.dueDate.seconds ? new Date(b.dueDate.seconds * 1000) : new Date(b.dueDate);
+            return dateA - dateB;
           }
           return 0;
         });
         
         setDeliverables(deliverablesData);
         
-        // Set active deliverable (first incomplete or in-progress deliverable)
-        const currentDeliverable = deliverablesData.find(d => 
+        // Set active deliverable to the next pending/in-progress task
+        const nextDeliverable = deliverablesData.find(d => 
           d.status === 'pending' || d.status === 'in-progress'
         ) || deliverablesData[0];
         
-        setActiveDeliverable(currentDeliverable);
+        setActiveDeliverable(nextDeliverable);
         
-        // Get messages - directly inline
+        // Get messages
         const messagesQuery = query(
           collection(db, 'messages'),
           where('projectId', '==', projectId)
@@ -86,7 +93,6 @@ useEffect(() => {
           ...doc.data()
         }));
         
-        // Sort messages by timestamp
         messagesData.sort((a, b) => {
           if (a.timestamp && b.timestamp) {
             const aTime = a.timestamp.seconds ? a.timestamp.seconds * 1000 : new Date(a.timestamp).getTime();
@@ -98,7 +104,21 @@ useEffect(() => {
         
         setMessages(messagesData);
         
-        // Get activities - directly inline
+        // Get resources
+        const resourcesQuery = query(
+          collection(db, 'projectResources'),
+          where('projectId', '==', projectId)
+        );
+        
+        const resourcesSnapshot = await getDocs(resourcesQuery);
+        const resourcesData = resourcesSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        
+        setResources(resourcesData);
+        
+        // Get activities
         const activitiesQuery = query(
           collection(db, 'activities'),
           where('projectId', '==', projectId)
@@ -110,7 +130,6 @@ useEffect(() => {
           ...doc.data()
         }));
         
-        // Sort activities by timestamp (newest first)
         activitiesData.sort((a, b) => {
           if (a.timestamp && b.timestamp) {
             const aTime = a.timestamp.seconds ? a.timestamp.seconds * 1000 : new Date(a.timestamp).getTime();
@@ -121,8 +140,6 @@ useEffect(() => {
         });
         
         setActivities(activitiesData);
-        
-        // Set loading to false after all async operations complete
         setLoading(false);
       } catch (error) {
         console.error('Error fetching project data:', error);
@@ -136,8 +153,8 @@ useEffect(() => {
     }
   }, [projectId, currentUser]);
 
- // Submit a message
-const handleSubmitMessage = async (e) => {
+  // Message handling
+  const handleSubmitMessage = async (e) => {
     e.preventDefault();
     
     if (!newMessage.trim()) return;
@@ -154,7 +171,6 @@ const handleSubmitMessage = async (e) => {
       
       await addDoc(collection(db, 'messages'), messageData);
       
-      // Add activity
       await addDoc(collection(db, 'activities'), {
         projectId,
         userId: currentUser.uid,
@@ -166,9 +182,7 @@ const handleSubmitMessage = async (e) => {
       
       setNewMessage('');
       
-      // Instead of calling fetchMessages and fetchActivities, fetch the data directly:
-      
-      // Fetch messages inline
+      // Refresh messages
       const messagesQuery = query(
         collection(db, 'messages'),
         where('projectId', '==', projectId)
@@ -180,7 +194,6 @@ const handleSubmitMessage = async (e) => {
         ...doc.data()
       }));
       
-      // Sort messages by timestamp
       messagesData.sort((a, b) => {
         if (a.timestamp && b.timestamp) {
           const aTime = a.timestamp.seconds ? a.timestamp.seconds * 1000 : new Date(a.timestamp).getTime();
@@ -191,36 +204,12 @@ const handleSubmitMessage = async (e) => {
       });
       
       setMessages(messagesData);
-      
-      // Fetch activities inline
-      const activitiesQuery = query(
-        collection(db, 'activities'),
-        where('projectId', '==', projectId)
-      );
-      
-      const activitiesSnapshot = await getDocs(activitiesQuery);
-      const activitiesData = activitiesSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      
-      // Sort activities by timestamp (newest first)
-      activitiesData.sort((a, b) => {
-        if (a.timestamp && b.timestamp) {
-          const aTime = a.timestamp.seconds ? a.timestamp.seconds * 1000 : new Date(a.timestamp).getTime();
-          const bTime = b.timestamp.seconds ? b.timestamp.seconds * 1000 : new Date(b.timestamp).getTime();
-          return bTime - aTime;
-        }
-        return 0;
-      });
-      
-      setActivities(activitiesData);
     } catch (error) {
       console.error('Error sending message:', error);
     }
   };
-  
-  // Handle file change
+
+  // File handling
   const handleFileChange = (e) => {
     if (e.target.files[0]) {
       setSubmission({
@@ -230,7 +219,7 @@ const handleSubmitMessage = async (e) => {
     }
   };
   
-  // Submit deliverable
+  // Deliverable submission
   const handleSubmitDeliverable = async (e) => {
     e.preventDefault();
     
@@ -241,14 +230,12 @@ const handleSubmitMessage = async (e) => {
       
       let fileUrl = '';
       
-      // Upload file if selected
       if (submission.file) {
         const storageRef = ref(storage, `submissions/${projectId}/${activeDeliverable.id}/${currentUser.uid}_${Date.now()}_${submission.file.name}`);
         await uploadBytes(storageRef, submission.file);
         fileUrl = await getDownloadURL(storageRef);
       }
       
-      // Create submission
       const submissionData = {
         deliverableId: activeDeliverable.id,
         projectId,
@@ -262,13 +249,11 @@ const handleSubmitMessage = async (e) => {
       
       await addDoc(collection(db, 'submissions'), submissionData);
       
-      // Update deliverable status
       await updateDoc(doc(db, 'deliverables', activeDeliverable.id), {
         status: 'submitted',
         updatedAt: serverTimestamp()
       });
       
-      // Add activity
       await addDoc(collection(db, 'activities'), {
         projectId,
         userId: currentUser.uid,
@@ -278,10 +263,8 @@ const handleSubmitMessage = async (e) => {
         timestamp: serverTimestamp()
       });
       
-      // Reset form
       setSubmission({ content: '', file: null });
       
-      // Refresh data
       const updatedDeliverable = { ...activeDeliverable, status: 'submitted' };
       setActiveDeliverable(updatedDeliverable);
       
@@ -290,38 +273,136 @@ const handleSubmitMessage = async (e) => {
       );
       
       setDeliverables(updatedDeliverables);
-      // Fetch activities inline
-      const activitiesQuery = query(
-        collection(db, 'activities'),
-        where('projectId', '==', projectId)
-        );
-        
-      const activitiesSnapshot = await getDocs(activitiesQuery);
-      const activitiesData = activitiesSnapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-        }));
-        
-        // Sort activities by timestamp (newest first)
-        activitiesData.sort((a, b) => {
-            if (a.timestamp && b.timestamp) {
-            const aTime = a.timestamp.seconds ? a.timestamp.seconds * 1000 : new Date(a.timestamp).getTime();
-            const bTime = b.timestamp.seconds ? b.timestamp.seconds * 1000 : new Date(b.timestamp).getTime();
-            return bTime - aTime;
-            }
-            return 0;
-        });
-        
-        setActivities(activitiesData);
-      
       setIsSubmitting(false);
     } catch (error) {
       console.error('Error submitting deliverable:', error);
       setIsSubmitting(false);
     }
   };
-  
-  // Calculate project progress
+
+  // Resource click handler with preview
+  const handleResourceClick = (resource) => {
+    setPreviewResource(resource);
+    setShowPreview(true);
+  };
+
+  // Close preview
+  const closePreview = () => {
+    setShowPreview(false);
+    setPreviewResource(null);
+  };
+
+  // Direct download
+  const handleDirectDownload = (resource, e) => {
+    e.stopPropagation();
+    if (resource.resourceType === 'link' || resource.url) {
+      window.open(resource.url || resource.fileUrl, '_blank');
+    } else if (resource.fileUrl) {
+      window.open(resource.fileUrl, '_blank');
+    }
+  };
+
+  // Render preview content
+  const renderPreview = () => {
+    if (!previewResource) return null;
+    
+    const { resourceType, fileUrl, fileType, title } = previewResource;
+    
+    if (resourceType === 'link') {
+      return (
+        <div style={{ textAlign: 'center', padding: '50px 20px' }}>
+          <p>External link: <a href={fileUrl} target="_blank" rel="noopener noreferrer">{fileUrl}</a></p>
+          <a 
+            href={fileUrl} 
+            target="_blank" 
+            rel="noopener noreferrer" 
+            className="btn btn-primary"
+            style={{ marginTop: '20px' }}
+          >
+            Open Link
+          </a>
+        </div>
+      );
+    }
+    
+    if (!fileType) {
+      return (
+        <div style={{ textAlign: 'center', padding: '50px 20px' }}>
+          <p>Preview not available for this file type.</p>
+          <a 
+            href={fileUrl} 
+            target="_blank" 
+            rel="noopener noreferrer" 
+            className="btn btn-primary"
+            style={{ marginTop: '20px' }}
+          >
+            Download File
+          </a>
+        </div>
+      );
+    }
+    
+    const type = fileType.toLowerCase();
+    
+    if (type.includes('pdf')) {
+      return (
+        <iframe 
+          src={`${fileUrl}#toolbar=0&navpanes=0`}
+          title={title}
+          width="100%"
+          height="500px"
+          style={{ border: 'none' }}
+        />
+      );
+    }
+    
+    if (type.includes('image')) {
+      return (
+        <img 
+          src={fileUrl} 
+          alt={title} 
+          style={{ maxWidth: '100%', maxHeight: '500px', objectFit: 'contain' }}
+        />
+      );
+    }
+    
+    if (type.includes('video')) {
+      return (
+        <video 
+          src={fileUrl} 
+          controls 
+          style={{ maxWidth: '100%', maxHeight: '500px' }}
+        />
+      );
+    }
+    
+    if (type.includes('audio')) {
+      return (
+        <audio 
+          src={fileUrl} 
+          controls 
+          style={{ width: '100%' }}
+        />
+      );
+    }
+    
+    return (
+      <div style={{ textAlign: 'center', padding: '50px 20px' }}>
+        <p>Preview not available for this file type.</p>
+        <a 
+          href={fileUrl} 
+          target="_blank" 
+          rel="noopener noreferrer" 
+          className="btn btn-primary"
+          style={{ marginTop: '20px' }}
+        >
+          Download File
+        </a>
+      </div>
+    );
+  };
+
+  // Utility functions
   const calculateProgress = () => {
     if (!deliverables.length) return 0;
     
@@ -331,14 +412,12 @@ const handleSubmitMessage = async (e) => {
     
     return Math.round((completedCount / deliverables.length) * 100);
   };
-  
-  // Format date
+
   const formatDate = (dateStr) => {
     if (!dateStr) return 'No date set';
     
     try {
       if (dateStr.seconds) {
-        // Firestore timestamp
         return new Date(dateStr.seconds * 1000).toLocaleDateString();
       }
       return new Date(dateStr).toLocaleDateString();
@@ -346,8 +425,20 @@ const handleSubmitMessage = async (e) => {
       return dateStr;
     }
   };
-  
-  // Get status class for styling
+
+  const getResourceIcon = (resource) => {
+    if (resource.resourceType === 'link') return '🔗';
+    if (!resource.fileType) return '📄';
+    
+    const type = resource.fileType.toLowerCase();
+    if (type.includes('pdf')) return '📕';
+    if (type.includes('image')) return '🖼️';
+    if (type.includes('video')) return '🎬';
+    if (type.includes('word') || type.includes('doc')) return '📘';
+    if (type.includes('excel') || type.includes('sheet')) return '📊';
+    return '📄';
+  };
+
   const getStatusClass = (status) => {
     switch (status) {
       case 'completed':
@@ -364,13 +455,24 @@ const handleSubmitMessage = async (e) => {
         return '';
     }
   };
-  
+
+  const getDaysUntilDue = (dueDate) => {
+    if (!dueDate) return null;
+    const due = dueDate.seconds ? new Date(dueDate.seconds * 1000) : new Date(dueDate);
+    const now = new Date();
+    const diffTime = due.getTime() - now.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays;
+  };
+
   if (loading) {
     return (
       <>
         <Navigation />
-        <div className="container" style={{ padding: '60px 0', textAlign: 'center' }}>
-          <div>Loading project portal...</div>
+        <div className="container" style={{ padding: '80px 0', textAlign: 'center' }}>
+          <div className="section-header">
+            <h2>Loading project portal...</h2>
+          </div>
         </div>
       </>
     );
@@ -380,357 +482,595 @@ const handleSubmitMessage = async (e) => {
     return (
       <>
         <Navigation />
-        <div className="container" style={{ padding: '60px 0', textAlign: 'center' }}>
-          <div style={{ color: 'var(--danger)' }}>{error}</div>
-          <button 
-            onClick={() => navigate('/student/dashboard')} 
-            className="btn btn-primary"
-            style={{ marginTop: '20px' }}
-          >
-            Back to Dashboard
-          </button>
+        <div className="container" style={{ padding: '80px 0', textAlign: 'center' }}>
+          <div className="section-header">
+            <h2>Error</h2>
+            <p>{error}</p>
+            <button 
+              onClick={() => navigate('/student/dashboard')} 
+              className="btn btn-primary"
+              style={{ marginTop: '20px' }}
+            >
+              Back to Dashboard
+            </button>
+          </div>
         </div>
       </>
     );
   }
-  
+
   return (
     <>
       <Navigation />
-      <div className="container" style={{ padding: '40px 0' }}>
+      <div className="container" style={{ padding: '40px 0', maxWidth: '1200px' }}>
+        {/* Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
           <div>
-            <h2 style={{ marginBottom: '5px' }}>{project?.title}</h2>
-            <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-              <span className="feature-badge">{project?.category}</span>
-              <span>With {company?.companyName || 'Company'}</span>
-            </div>
+            <h2>{project?.title}</h2>
+            <p style={{ color: '#666' }}>
+              {project?.category} • With {company?.companyName || 'Company'} • {project?.duration}
+            </p>
           </div>
-          <button 
-            onClick={() => navigate('/student/dashboard')} 
-            className="btn btn-outline"
-          >
-            Back to Dashboard
-          </button>
-        </div>
-        
-        {/* Progress Bar */}
-        <div style={{ background: 'white', padding: '20px', borderRadius: '16px', boxShadow: '0 10px 30px rgba(0,0,0,0.05)', marginBottom: '30px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-            <h3 style={{ margin: 0 }}>Project Progress</h3>
-            <span>{calculateProgress()}% Complete</span>
-          </div>
-          <div style={{ height: '8px', background: '#f1f5f9', borderRadius: '4px', overflow: 'hidden' }}>
-            <div 
-              style={{ 
-                height: '100%', 
-                width: `${calculateProgress()}%`, 
-                background: 'linear-gradient(to right, var(--gradient-start), var(--gradient-end))',
-                borderRadius: '4px',
-                transition: 'width 0.5s ease'
-              }}
-            ></div>
-          </div>
-          
-          <div style={{ display: 'flex', gap: '15px', marginTop: '20px', flexWrap: 'wrap' }}>
-            <div style={{ 
-              flex: '1', 
-              minWidth: '120px', 
-              background: 'rgba(34, 197, 94, 0.1)', 
-              color: 'var(--success)', 
-              padding: '15px', 
-              borderRadius: '8px', 
-              textAlign: 'center' 
-            }}>
-              <div style={{ fontSize: '24px', fontWeight: '700' }}>
-                {deliverables.filter(d => d.status === 'completed' || d.status === 'approved').length}
-              </div>
-              <div>Completed</div>
-            </div>
-            
-            <div style={{ 
-              flex: '1', 
-              minWidth: '120px', 
-              background: 'rgba(108, 99, 255, 0.1)', 
-              color: 'var(--primary)', 
-              padding: '15px', 
-              borderRadius: '8px', 
-              textAlign: 'center' 
-            }}>
-              <div style={{ fontSize: '24px', fontWeight: '700' }}>
-                {deliverables.filter(d => d.status === 'in-progress' || d.status === 'submitted').length}
-              </div>
-              <div>In Progress</div>
-            </div>
-            
-            <div style={{ 
-              flex: '1', 
-              minWidth: '120px', 
-              background: '#f1f5f9', 
-              color: 'var(--dark)', 
-              padding: '15px', 
-              borderRadius: '8px', 
-              textAlign: 'center' 
-            }}>
-              <div style={{ fontSize: '24px', fontWeight: '700' }}>
-                {deliverables.filter(d => d.status === 'pending').length}
-              </div>
-              <div>Not Started</div>
-            </div>
+          <div style={{ display: 'flex', gap: '15px' }}>
+            <Link to="/student/dashboard" className="btn btn-outline">
+              Back to Dashboard
+            </Link>
           </div>
         </div>
-        
-        <div style={{ display: 'flex', gap: '30px', flexWrap: 'wrap' }}>
-          {/* Left Column - Deliverables */}
-          <div style={{ flex: '1', minWidth: '300px' }}>
-            {/* Current Deliverable */}
-            {activeDeliverable && (
-              <div style={{ background: 'white', padding: '25px', borderRadius: '16px', boxShadow: '0 10px 30px rgba(0,0,0,0.05)', marginBottom: '30px' }}>
-                <h3 style={{ marginBottom: '15px' }}>Current Deliverable</h3>
-                <div className="feature-badge" style={{ marginBottom: '10px' }}>
-                  {activeDeliverable.status === 'pending' ? 'Not Started' : 
-                   activeDeliverable.status === 'in-progress' ? 'In Progress' :
-                   activeDeliverable.status === 'submitted' ? 'Submitted' :
-                   activeDeliverable.status === 'completed' ? 'Completed' : 
-                   activeDeliverable.status === 'approved' ? 'Approved' : 
-                   activeDeliverable.status === 'rejected' ? 'Needs Revision' : 
-                   activeDeliverable.status}
+
+        {/* Main Tab Navigation */}
+        <div style={{ background: 'white', borderRadius: '16px', boxShadow: '0 5px 15px rgba(0,0,0,0.05)', overflow: 'hidden', marginBottom: '30px' }}>
+          <div style={{ borderBottom: '1px solid #eee', padding: '5px 0' }}>
+            <div style={{ display: 'flex' }}>
+              <button 
+                onClick={() => setActiveTab('overview')} 
+                style={{ 
+                  flex: '1', 
+                  padding: '15px', 
+                  background: activeTab === 'overview' ? '#f5f7ff' : 'transparent',
+                  border: 'none',
+                  borderBottom: activeTab === 'overview' ? '3px solid var(--primary)' : 'none',
+                  cursor: 'pointer',
+                  fontWeight: activeTab === 'overview' ? '600' : '400',
+                  color: activeTab === 'overview' ? 'var(--primary)' : 'inherit'
+                }}
+              >
+                Overview
+              </button>
+              <button 
+                onClick={() => setActiveTab('assignments')} 
+                style={{ 
+                  flex: '1', 
+                  padding: '15px', 
+                  background: activeTab === 'assignments' ? '#f5f7ff' : 'transparent',
+                  border: 'none',
+                  borderBottom: activeTab === 'assignments' ? '3px solid var(--primary)' : 'none',
+                  cursor: 'pointer',
+                  fontWeight: activeTab === 'assignments' ? '600' : '400',
+                  color: activeTab === 'assignments' ? 'var(--primary)' : 'inherit'
+                }}
+              >
+                Assignments
+              </button>
+              <button 
+                onClick={() => setActiveTab('resources')} 
+                style={{ 
+                  flex: '1', 
+                  padding: '15px', 
+                  background: activeTab === 'resources' ? '#f5f7ff' : 'transparent',
+                  border: 'none',
+                  borderBottom: activeTab === 'resources' ? '3px solid var(--primary)' : 'none',
+                  cursor: 'pointer',
+                  fontWeight: activeTab === 'resources' ? '600' : '400',
+                  color: activeTab === 'resources' ? 'var(--primary)' : 'inherit'
+                }}
+              >
+                Resources
+              </button>
+              <button 
+                onClick={() => setActiveTab('messages')} 
+                style={{ 
+                  flex: '1', 
+                  padding: '15px', 
+                  background: activeTab === 'messages' ? '#f5f7ff' : 'transparent',
+                  border: 'none',
+                  borderBottom: activeTab === 'messages' ? '3px solid var(--primary)' : 'none',
+                  cursor: 'pointer',
+                  fontWeight: activeTab === 'messages' ? '600' : '400',
+                  color: activeTab === 'messages' ? 'var(--primary)' : 'inherit'
+                }}
+              >
+                Messages
+              </button>
+            </div>
+          </div>
+
+          {/* Tab Content */}
+          <div style={{ padding: '30px' }}>
+            {/* Overview Tab - SIMPLIFIED */}
+            {activeTab === 'overview' && (
+              <div>
+                {/* Progress Overview */}
+                <div style={{ marginBottom: '30px' }}>
+                  <h3 style={{ marginBottom: '15px' }}>Project Progress</h3>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px' }}>
+                    <div style={{ padding: '20px', background: '#f5f7ff', borderRadius: '8px', textAlign: 'center' }}>
+                      <h4 style={{ marginBottom: '10px', color: 'var(--primary)' }}>Overall Progress</h4>
+                      <p style={{ fontSize: '32px', fontWeight: '700', margin: '10px 0' }}>{calculateProgress()}%</p>
+                      <div style={{ height: '8px', background: '#e2e8f0', borderRadius: '4px', overflow: 'hidden' }}>
+                        <div 
+                          style={{ 
+                            height: '100%', 
+                            width: `${calculateProgress()}%`, 
+                            background: 'linear-gradient(to right, var(--gradient-start), var(--gradient-end))',
+                            borderRadius: '4px',
+                            transition: 'width 0.5s ease'
+                          }}
+                        ></div>
+                      </div>
+                    </div>
+
+                    <div style={{ padding: '20px', background: '#f5f7ff', borderRadius: '8px', textAlign: 'center' }}>
+                      <h4 style={{ marginBottom: '10px', color: 'var(--primary)' }}>Assignments</h4>
+                      <p style={{ fontSize: '32px', fontWeight: '700', margin: '10px 0' }}>{deliverables.length}</p>
+                      <p style={{ color: '#666', fontSize: '14px' }}> In total </p>
+                    </div>
+
+                    <div style={{ padding: '20px', background: '#f5f7ff', borderRadius: '8px', textAlign: 'center' }}>
+                      <h4 style={{ marginBottom: '10px', color: 'var(--primary)' }}>Completed</h4>
+                      <p style={{ fontSize: '32px', fontWeight: '700', margin: '10px 0' }}>
+                        {deliverables.filter(d => d.status === 'completed' || d.status === 'approved').length}
+                      </p>
+                      <p style={{ color: '#666', fontSize: '14px' }}>Assignments done</p>
+                    </div>
+                  </div>
                 </div>
-                <h4 style={{ marginBottom: '10px' }}>{activeDeliverable.title}</h4>
-                <p style={{ marginBottom: '15px' }}>{activeDeliverable.description}</p>
-                
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
+
+                {/* Project Description */}
+                <div style={{ marginBottom: '30px' }}>
+                  <h3 style={{ marginBottom: '15px' }}>Project Description</h3>
+                  <p style={{ whiteSpace: 'pre-wrap', lineHeight: '1.6' }}>{project?.description}</p>
+                  
+                  <div style={{ marginTop: '20px' }}>
+                    <h4 style={{ marginBottom: '10px' }}>Required Skills</h4>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                      {project?.skills?.map(skill => (
+                        <span key={skill} className="feature-badge">{skill}</span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Project Details */}
+                <div>
+                  <h3 style={{ marginBottom: '15px' }}>Project Details</h3>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px' }}>
+                    <div style={{ padding: '20px', background: '#f5f7ff', borderRadius: '8px' }}>
+                      <h4 style={{ marginBottom: '10px', color: 'var(--primary)' }}>Duration</h4>
+                      <p>{project?.duration}</p>
+                    </div>
+                    
+                    <div style={{ padding: '20px', background: '#f5f7ff', borderRadius: '8px' }}>
+                      <h4 style={{ marginBottom: '10px', color: 'var(--primary)' }}>Compensation</h4>
+                      <p>{project?.isExperienceOnly ? 'Experience Only' : `$${project?.compensation}`}</p>
+                    </div>
+                    
+                    <div style={{ padding: '20px', background: '#f5f7ff', borderRadius: '8px' }}>
+                      <h4 style={{ marginBottom: '10px', color: 'var(--primary)' }}>Company</h4>
+                      <p>{company?.companyName || 'Company'}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Assignments Tab */}
+            {activeTab === 'assignments' && (
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                  <h3>Project Assignments</h3>
+                  <span style={{ color: '#666' }}>{deliverables.length} total</span>
+                </div>
+
+                {deliverables.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '40px 0' }}>
+                    <p>No assignments have been created yet.</p>
+                  </div>
+                ) : (
                   <div>
-                    <span style={{ fontWeight: '500' }}>Due Date:</span> {formatDate(activeDeliverable.dueDate)}
-                  </div>
-                  <div className={`feature-badge ${getStatusClass(activeDeliverable.status)}`}>
-                    {activeDeliverable.status}
-                  </div>
-                </div>
-                
-                {(activeDeliverable.status === 'pending' || activeDeliverable.status === 'in-progress' || activeDeliverable.status === 'rejected') && (
-                  <form onSubmit={handleSubmitDeliverable}>
-                    <div className="form-group" style={{ marginBottom: '15px' }}>
-                      <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>Submission Notes</label>
-                      <textarea 
-                        value={submission.content}
-                        onChange={(e) => setSubmission({ ...submission, content: e.target.value })}
-                        style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #ddd', minHeight: '100px' }}
-                        placeholder="Describe your submission or add any notes for your mentor..."
-                      ></textarea>
-                    </div>
-                    
-                    <div className="form-group" style={{ marginBottom: '15px' }}>
-                      <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>Upload File (optional)</label>
-                      <input 
-                        type="file" 
-                        onChange={handleFileChange}
-                        style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '8px' }}
-                      />
-                    </div>
-                    
-                    <button 
-                      type="submit"
-                      disabled={isSubmitting}
-                      className="btn btn-primary"
-                      style={{ width: '100%' }}
-                    >
-                      {isSubmitting ? 'Submitting...' : (
-                        activeDeliverable.status === 'rejected' ? 'Resubmit Deliverable' : 
-                        activeDeliverable.status === 'in-progress' ? 'Submit Deliverable' : 
-                        'Start & Submit Deliverable'
-                      )}
-                    </button>
-                  </form>
-                )}
-                
-                {(activeDeliverable.status === 'submitted') && (
-                  <div style={{ padding: '15px', background: 'rgba(108, 99, 255, 0.1)', borderRadius: '8px' }}>
-                    <p>Your submission is under review. Check back later for feedback.</p>
-                  </div>
-                )}
-                
-                {(activeDeliverable.status === 'completed' || activeDeliverable.status === 'approved') && (
-                  <div style={{ padding: '15px', background: 'rgba(34, 197, 94, 0.1)', borderRadius: '8px' }}>
-                    <p style={{ fontWeight: '500', marginBottom: '5px' }}>Feedback:</p>
-                    <p>{activeDeliverable.feedback || 'No feedback provided yet.'}</p>
+                    {deliverables.map((deliverable, index) => (
+                      <div key={deliverable.id} style={{ 
+                        padding: '25px', 
+                        borderRadius: '8px',
+                        border: '1px solid #eee',
+                        marginBottom: '20px',
+                        background: 'white'
+                      }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '15px' }}>
+                          <div>
+                            <h4 style={{ marginBottom: '5px' }}>{deliverable.title}</h4>
+                            <div style={{ fontSize: '14px', color: '#666', marginBottom: '10px' }}>
+                              Due: {formatDate(deliverable.dueDate)}
+                              {getDaysUntilDue(deliverable.dueDate) !== null && (
+                                <span style={{ 
+                                  marginLeft: '10px',
+                                  color: getDaysUntilDue(deliverable.dueDate) <= 2 ? 'var(--danger)' : 
+                                         getDaysUntilDue(deliverable.dueDate) <= 7 ? 'var(--warning)' : '#666',
+                                  fontWeight: '500'
+                                }}>
+                                  ({getDaysUntilDue(deliverable.dueDate)} days remaining)
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <span className={`feature-badge ${getStatusClass(deliverable.status)}`}>
+                            {deliverable.status}
+                          </span>
+                        </div>
+                        
+                        <p style={{ marginBottom: '20px', lineHeight: '1.6' }}>
+                          {deliverable.description}
+                        </p>
+                        
+                        {deliverable === activeDeliverable && 
+                         (deliverable.status === 'pending' || deliverable.status === 'in-progress' || deliverable.status === 'rejected') && (
+                          <div style={{ 
+                            marginTop: '20px',
+                            padding: '20px',
+                            background: '#f8fafc',
+                            borderRadius: '8px',
+                            border: '1px solid #e2e8f0'
+                          }}>
+                            <h5 style={{ marginBottom: '15px' }}>Submit Assignment</h5>
+                            
+                            <form onSubmit={handleSubmitDeliverable}>
+                              <div style={{ marginBottom: '15px' }}>
+                                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>
+                                  Submission Notes
+                                </label>
+                                <textarea 
+                                  value={submission.content}
+                                  onChange={(e) => setSubmission({ ...submission, content: e.target.value })}
+                                  style={{ 
+                                    width: '100%', 
+                                    padding: '12px', 
+                                    borderRadius: '8px', 
+                                    border: '1px solid #ddd', 
+                                    minHeight: '100px'
+                                  }}
+                                  placeholder="Describe your submission and any challenges you faced..."
+                                />
+                              </div>
+                              
+                              <div style={{ marginBottom: '15px' }}>
+                                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>
+                                  Upload File (optional)
+                                </label>
+                                <input 
+                                  type="file" 
+                                  onChange={handleFileChange}
+                                  style={{ 
+                                    width: '100%', 
+                                    padding: '10px', 
+                                    border: '1px solid #ddd', 
+                                    borderRadius: '8px'
+                                  }}
+                                />
+                                {submission.file && (
+                                  <div style={{ marginTop: '8px', fontSize: '14px', color: 'var(--success)' }}>
+                                    ✓ Selected: {submission.file.name}
+                                  </div>
+                                )}
+                              </div>
+                              
+                              <button 
+                                type="submit"
+                                disabled={isSubmitting}
+                                className="btn btn-primary"
+                                style={{ width: '100%' }}
+                              >
+                                {isSubmitting ? 'Submitting...' : 'Submit Assignment'}
+                              </button>
+                            </form>
+                          </div>
+                        )}
+                        
+                        {deliverable.status === 'submitted' && (
+                          <div style={{ 
+                            marginTop: '15px',
+                            padding: '15px',
+                            background: 'rgba(108, 99, 255, 0.1)',
+                            borderRadius: '8px',
+                            color: 'var(--primary)'
+                          }}>
+                            <p style={{ fontWeight: '500', marginBottom: '5px' }}>Submitted for Review</p>
+                            <p>Your assignment has been submitted and is being reviewed by your mentor.</p>
+                          </div>
+                        )}
+                        
+                        {(deliverable.status === 'completed' || deliverable.status === 'approved') && (
+                          <div style={{ 
+                            marginTop: '15px',
+                            padding: '15px',
+                            background: 'rgba(34, 197, 94, 0.1)',
+                            borderRadius: '8px',
+                            color: 'var(--success)'
+                          }}>
+                            <p style={{ fontWeight: '500', marginBottom: '5px' }}>Assignment Approved!</p>
+                            {deliverable.feedback && (
+                              <div>
+                                <p style={{ fontWeight: '500', marginTop: '10px' }}>Feedback:</p>
+                                <p>{deliverable.feedback}</p>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        
+                        {deliverable !== activeDeliverable && 
+                         (deliverable.status === 'pending' || deliverable.status === 'in-progress') && (
+                          <button 
+                            onClick={() => setActiveDeliverable(deliverable)}
+                            className="btn btn-outline"
+                            style={{ marginTop: '15px' }}
+                          >
+                            Work on This Assignment
+                          </button>
+                        )}
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
             )}
-            
-            {/* All Deliverables */}
-            <div style={{ background: 'white', padding: '25px', borderRadius: '16px', boxShadow: '0 10px 30px rgba(0,0,0,0.05)' }}>
-              <h3 style={{ marginBottom: '20px' }}>All Deliverables</h3>
-              
-              {deliverables.length === 0 ? (
-                <p>No deliverables have been assigned yet.</p>
-              ) : (
-                <div>
-                  {deliverables.map((deliverable, index) => (
-                    <div 
-                      key={deliverable.id} 
-                      style={{ 
-                        padding: '15px',
-                        border: activeDeliverable?.id === deliverable.id ? '2px solid var(--primary)' : '1px solid #f1f5f9',
-                        borderRadius: '8px',
-                        marginBottom: index < deliverables.length - 1 ? '15px' : '0',
-                        cursor: 'pointer',
-                        background: activeDeliverable?.id === deliverable.id ? 'rgba(108, 99, 255, 0.05)' : 'white'
-                      }}
-                      onClick={() => setActiveDeliverable(deliverable)}
-                    >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
-                        <span style={{ fontWeight: '500' }}>{deliverable.title}</span>
-                        <span className={`feature-badge ${getStatusClass(deliverable.status)}`} style={{ fontSize: '12px', padding: '3px 8px' }}>
-                          {deliverable.status}
-                        </span>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', color: '#666' }}>
-                        <span>Due: {formatDate(deliverable.dueDate)}</span>
-                        <span>{deliverable.points} pts</span>
-                      </div>
-                    </div>
-                  ))}
+
+            {/* Resources Tab - SIMPLIFIED */}
+            {activeTab === 'resources' && (
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                  <h3>Project Resources</h3>
+                  <span style={{ color: '#666' }}>{resources.length} available</span>
                 </div>
-              )}
-            </div>
-          </div>
-          
-          {/* Right Column - Activities and Messages */}
-          <div style={{ flex: '1', minWidth: '300px' }}>
-            {/* Messages */}
-            <div style={{ background: 'white', padding: '25px', borderRadius: '16px', boxShadow: '0 10px 30px rgba(0,0,0,0.05)', marginBottom: '30px' }}>
-              <h3 style={{ marginBottom: '20px' }}>Messages</h3>
-              
-              <div style={{ 
-                maxHeight: '300px', 
-                overflowY: 'auto', 
-                marginBottom: '20px',
-                border: '1px solid #f1f5f9',
-                borderRadius: '8px',
-                padding: '15px'
-              }}>
-                {messages.length === 0 ? (
-                  <p style={{ textAlign: 'center', color: '#666' }}>No messages yet. Start a conversation with your mentor.</p>
+
+                {resources.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '50px', background: 'white', borderRadius: '8px', boxShadow: '0 5px 15px rgba(0,0,0,0.05)' }}>
+                    <div style={{ fontSize: '64px', marginBottom: '20px' }}>📚</div>
+                    <h4>No resources available yet</h4>
+                    <p style={{ marginTop: '15px' }}>Your mentor will share project resources here when they become available.</p>
+                  </div>
                 ) : (
-                  messages.map(message => (
-                    <div 
-                      key={message.id} 
-                      style={{ 
-                        marginBottom: '15px',
+                  <div>
+                    {resources.map((resource, index) => (
+                      <div key={resource.id} style={{ 
                         display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: message.senderType === 'student' ? 'flex-end' : 'flex-start'
+                        alignItems: 'center',
+                        padding: '25px', 
+                        background: index % 2 === 0 ? '#f5f7ff' : 'white', 
+                        borderRadius: '8px',
+                        marginBottom: '15px',
+                        border: '1px solid #eee',
+                        transition: 'transform 0.2s, box-shadow 0.2s'
                       }}
-                    >
-                      <div style={{ 
-                        background: message.senderType === 'student' ? 'var(--primary)' : '#f1f5f9',
-                        color: message.senderType === 'student' ? 'white' : 'var(--dark)',
-                        padding: '10px 15px',
-                        borderRadius: '12px',
-                        maxWidth: '80%'
-                      }}>
-                        {message.content}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.transform = 'translateY(-2px)';
+                        e.currentTarget.style.boxShadow = '0 8px 25px rgba(0,0,0,0.1)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.transform = 'translateY(0)';
+                        e.currentTarget.style.boxShadow = 'none';
+                      }}
+                      >
+                        <div style={{ marginRight: '20px', fontSize: '32px' }}>
+                          {getResourceIcon(resource)}
+                        </div>
+                        <div style={{ flex: 1 }}>
+                          <h4 style={{ marginBottom: '5px' }}>{resource.title}</h4>
+                          <div style={{ display: 'flex', gap: '15px', alignItems: 'center', marginBottom: '10px' }}>
+                            <span style={{ color: '#666', fontSize: '14px' }}>
+                              Added: {formatDate(resource.uploadedAt)}
+                            </span>
+                            <span className="feature-badge">
+                              {resource.resourceType === 'link' ? 'External Link' : 'Document'}
+                            </span>
+                          </div>
+                          {resource.description && (
+                            <p style={{ margin: '0', color: '#666' }}>
+                              {resource.description.length > 150 ? 
+                                `${resource.description.substring(0, 150)}...` : 
+                                resource.description
+                              }
+                            </p>
+                          )}
+                        </div>
+                        <div style={{ display: 'flex', gap: '10px' }}>
+                          <button 
+                            onClick={() => handleResourceClick(resource)}
+                            className="btn btn-outline"
+                            style={{ padding: '8px 15px' }}
+                          >
+                            Preview
+                          </button>
+                          <button 
+                            onClick={(e) => handleDirectDownload(resource, e)}
+                            className="btn btn-primary"
+                            style={{ padding: '8px 15px' }}
+                          >
+                            {resource.resourceType === 'link' ? 'Open Link' : 'Download'}
+                          </button>
+                        </div>
                       </div>
-                      <div style={{ 
-                        fontSize: '12px', 
-                        color: '#666',
-                        marginTop: '4px'
-                      }}>
-                        {message.timestamp ? formatDate(message.timestamp) + ' ' + new Date(message.timestamp.seconds * 1000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : 'Just now'}
-                      </div>
-                    </div>
-                  ))
+                    ))}
+                  </div>
                 )}
               </div>
-              
-              <form onSubmit={handleSubmitMessage}>
-                <div style={{ display: 'flex', gap: '10px' }}>
-                  <input 
-                    type="text"
-                    value={newMessage}
-                    onChange={(e) => setNewMessage(e.target.value)}
-                    placeholder="Type a message to your mentor..."
-                    style={{ 
-                      flex: '1',
-                      padding: '12px',
-                      borderRadius: '8px',
-                      border: '1px solid #ddd'
-                    }}
-                  />
-                  <button 
-                    type="submit"
-                    className="btn btn-primary"
-                    disabled={!newMessage.trim()}
-                  >
-                    Send
-                  </button>
-                </div>
-              </form>
-            </div>
-            
-            {/* Recent Activity */}
-            <div style={{ background: 'white', padding: '25px', borderRadius: '16px', boxShadow: '0 10px 30px rgba(0,0,0,0.05)' }}>
-              <h3 style={{ marginBottom: '20px' }}>Recent Activity</h3>
-              
-              {activities.length === 0 ? (
-                <p>No recent activity.</p>
-              ) : (
-                <div>
-                  {activities.slice(0, 5).map(activity => (
-                    <div 
-                      key={activity.id} 
-                      style={{ 
-                        padding: '12px',
-                        borderBottom: '1px solid #f1f5f9',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '10px'
-                      }}
-                    >
-                      <div style={{ 
-                        width: '30px',
-                        height: '30px',
-                        borderRadius: '50%',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontSize: '14px',
-                        background: 
-                          activity.activityType === 'submission' ? 'rgba(34, 197, 94, 0.1)' :
-                          activity.activityType === 'feedback' ? 'rgba(251, 191, 36, 0.1)' :
-                          activity.activityType === 'message' ? 'rgba(108, 99, 255, 0.1)' :
-                          '#f1f5f9',
-                        color:
-                          activity.activityType === 'submission' ? 'var(--success)' :
-                          activity.activityType === 'feedback' ? 'var(--warning)' :
-                          activity.activityType === 'message' ? 'var(--primary)' :
-                          'var(--dark)'
-                      }}>
-                        {activity.activityType === 'submission' ? '📄' :
-                         activity.activityType === 'feedback' ? '✓' :
-                         activity.activityType === 'message' ? '💬' : '📌'}
-                      </div>
-                      
-                      <div style={{ flex: '1' }}>
-                        <div style={{ fontSize: '14px' }}>
-                          <span style={{ fontWeight: '500' }}>
-                            {activity.userType === 'student' ? 'You' : company?.companyName || 'Mentor'}
-                          </span>{' '}
-                          {activity.content}
+            )}
+
+            {/* Messages Tab */}
+            {activeTab === 'messages' && (
+              <div>
+                <h3 style={{ marginBottom: '20px' }}>Messages with {company?.companyName || 'Mentor'}</h3>
+                
+                {messages.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '50px', background: 'white', borderRadius: '8px', boxShadow: '0 5px 15px rgba(0,0,0,0.05)' }}>
+                    <div style={{ fontSize: '64px', marginBottom: '20px' }}>💬</div>
+                    <h4>No messages yet</h4>
+                    <p style={{ marginTop: '15px' }}>Start a conversation with your mentor using the message form below.</p>
+                  </div>
+                ) : (
+                  <div style={{ 
+                    maxHeight: '400px',
+                    overflowY: 'auto', 
+                    marginBottom: '20px',
+                    border: '1px solid #f1f5f9',
+                    borderRadius: '8px',
+                    padding: '20px',
+                    background: '#f8fafc'
+                  }}>
+                    {messages.map(message => (
+                      <div 
+                        key={message.id} 
+                        style={{ 
+                          marginBottom: '20px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: message.senderType === 'student' ? 'flex-end' : 'flex-start'
+                        }}
+                      >
+                        <div style={{ 
+                          background: message.senderType === 'student' ? 'var(--primary)' : 'white',
+                          color: message.senderType === 'student' ? 'white' : 'var(--dark)',
+                          padding: '12px 16px',
+                          borderRadius: '16px',
+                          maxWidth: '70%',
+                          boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+                          border: message.senderType === 'student' ? 'none' : '1px solid #e2e8f0'
+                        }}>
+                          {message.content}
                         </div>
-                        <div style={{ fontSize: '12px', color: '#666' }}>
-                          {activity.timestamp ? formatDate(activity.timestamp) + ' ' + new Date(activity.timestamp.seconds * 1000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : 'Just now'}
+                        <div style={{ 
+                          fontSize: '12px', 
+                          color: '#666',
+                          marginTop: '6px',
+                          padding: '0 8px'
+                        }}>
+                          {message.timestamp ? formatDate(message.timestamp) + ' ' + 
+                            new Date(message.timestamp.seconds * 1000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : 
+                            'Just now'
+                          }
                         </div>
                       </div>
+                    ))}
+                  </div>
+                )}
+                
+                <div style={{ 
+                  background: 'white', 
+                  padding: '20px', 
+                  borderRadius: '8px', 
+                  boxShadow: '0 5px 15px rgba(0,0,0,0.05)' 
+                }}>
+                  <h4 style={{ marginBottom: '15px' }}>Send Message</h4>
+                  <form onSubmit={handleSubmitMessage}>
+                    <div style={{ marginBottom: '15px' }}>
+                      <textarea 
+                        value={newMessage}
+                        onChange={(e) => setNewMessage(e.target.value)}
+                        placeholder="Type your message to your mentor..."
+                        style={{ 
+                          width: '100%',
+                          padding: '12px',
+                          borderRadius: '8px',
+                          border: '1px solid #ddd',
+                          minHeight: '100px',
+                          resize: 'vertical'
+                        }}
+                      />
                     </div>
-                  ))}
+                    <button 
+                      type="submit"
+                      disabled={!newMessage.trim()}
+                      className="btn btn-primary"
+                    >
+                      Send Message
+                    </button>
+                  </form>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         </div>
+        
+        {/* Resource Preview Modal */}
+        {showPreview && previewResource && (
+          <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.75)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000
+          }}>
+            <div style={{
+              backgroundColor: 'white',
+              borderRadius: '16px',
+              width: '90%',
+              maxWidth: '900px',
+              maxHeight: '80vh',
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column'
+            }}>
+              <div style={{ 
+                padding: '20px', 
+                borderBottom: '1px solid #eee',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center'
+              }}>
+                <h3>{previewResource.title}</h3>
+                <button 
+                  onClick={closePreview}
+                  style={{ 
+                    background: 'none', 
+                    border: 'none', 
+                    fontSize: '24px',
+                    cursor: 'pointer' 
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+              <div style={{ padding: '20px', overflow: 'auto', flex: 1 }}>
+                {renderPreview()}
+              </div>
+              <div style={{ 
+                padding: '15px 20px', 
+                borderTop: '1px solid #eee',
+                display: 'flex',
+                justifyContent: 'flex-end',
+                gap: '10px'
+              }}>
+                <button 
+                  onClick={closePreview}
+                  className="btn btn-outline"
+                >
+                  Close
+                </button>
+                <a 
+                  href={previewResource.fileUrl || previewResource.url} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="btn btn-primary"
+                >
+                  {previewResource.resourceType === 'link' ? 'Open Link' : 'Download'}
+                </a>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </>
   );
