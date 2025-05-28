@@ -13,10 +13,14 @@
   --danger: #ef4444;
 }
 
-html {
-  zoom: 0.8;
-  -moz-transform: scale(0.8);
-  -moz-transform-origin: 0 0;
+body {
+  background-color: var(--light);
+  color: var(--dark);
+  line-height: 1.6;
+  transform: scale(0.8);
+  transform-origin: top;
+  min-height: 125vh;
+  overflow-x: hidden;
 }
 
 * {
@@ -24,12 +28,6 @@ html {
   padding: 0;
   box-sizing: border-box;
   font-family: "Poppins", "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-}
-
-body {
-  background-color: var(--light);
-  color: var(--dark);
-  line-height: 1.6;
 }
 
 .container {
