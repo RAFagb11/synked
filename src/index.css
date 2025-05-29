@@ -11,18 +11,6 @@
   --success: #22c55e;
   --warning: #fbbf24;
   --danger: #ef4444;
-  font-size: 13px; /* Base font size reduced to ~80% of 16px */
-}
-
-body {
-  background-color: var(--light);
-  color: var(--dark);
-  line-height: 1.6;
-  font-size: 1rem;
-  transform: scale(0.8);
-  transform-origin: top;
-  min-height: 125vh;
-  overflow-x: hidden;
 }
 
 * {
@@ -32,9 +20,22 @@ body {
   font-family: "Poppins", "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
 }
 
+html, body {
+  overflow-x: hidden;
+}
+
+/* Apply 75% scale to all pages */
+body {
+  transform: scale(0.75);
+  transform-origin: top center;
+  width: 133.33%;
+  margin-left: -16.665%;
+  min-height: 133.33vh;
+}
+
 .container {
-  width: 80%;
-  max-width: 1600px; /* Increased to compensate for smaller scale */
+  width: 90%;
+  max-width: 1200px;
   margin: 0 auto;
   padding: 0 20px;
 }

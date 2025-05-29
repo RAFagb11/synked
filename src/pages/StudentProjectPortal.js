@@ -519,16 +519,20 @@ const StudentProjectPortal = () => {
           <div className="error-state">{error}</div>
         ) : (
           <>
-            <div className="project-header">
-              <div className="container">
-                <h1>{project?.title}</h1>
-                <div className="project-meta">
-                  <span>{project?.category} • With {company?.companyName} • {project?.duration}</span>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
+              <div>
+                <h2 style={{ marginBottom: '5px' }}>{project?.title}</h2>
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                  <span className="feature-badge">{project?.category}</span>
+                  <span>Project Portal</span>
                 </div>
-                <Link to="/student/dashboard" className="back-button">
-                  Back to Dashboard
-                </Link>
               </div>
+              <button 
+                onClick={() => navigate('/student/dashboard')} 
+                className="btn btn-outline"
+              >
+                Back to Dashboard
+              </button>
             </div>
 
             {/* Main Tab Navigation */}
@@ -775,7 +779,7 @@ const StudentProjectPortal = () => {
                                     type="submit"
                                     disabled={isSubmitting}
                                     className="btn btn-primary"
-                                    style={{ width: '100%' }}
+                                    style={{ width: '100%', padding: '8px 20px' }}
                                   >
                                     {isSubmitting ? 'Submitting...' : 'Submit Assignment'}
                                   </button>
@@ -893,14 +897,14 @@ const StudentProjectPortal = () => {
                               <button 
                                 onClick={() => handleResourceClick(resource)}
                                 className="btn btn-outline"
-                                style={{ padding: '8px 15px' }}
+                                style={{ padding: '8px 20px' }}
                               >
                                 Preview
                               </button>
                               <button 
                                 onClick={(e) => handleDirectDownload(resource, e)}
                                 className="btn btn-primary"
-                                style={{ padding: '8px 15px' }}
+                                style={{ padding: '8px 20px' }}
                               >
                                 {resource.resourceType === 'link' ? 'Open Link' : 'Download'}
                               </button>
@@ -997,6 +1001,7 @@ const StudentProjectPortal = () => {
                           type="submit"
                           disabled={!newMessage.trim()}
                           className="btn btn-primary"
+                          style={{ padding: '8px 20px' }}
                         >
                           Send Message
                         </button>
@@ -1064,6 +1069,7 @@ const StudentProjectPortal = () => {
                     <button 
                       onClick={closePreview}
                       className="btn btn-outline"
+                      style={{ padding: '8px 20px' }}
                     >
                       Close
                     </button>
@@ -1072,6 +1078,7 @@ const StudentProjectPortal = () => {
                       target="_blank" 
                       rel="noopener noreferrer"
                       className="btn btn-primary"
+                      style={{ padding: '8px 20px' }}
                     >
                       {previewResource.resourceType === 'link' ? 'Open Link' : 'Download'}
                     </a>
