@@ -2,7 +2,8 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { AuthContext } from '../contexts/AuthContext';
 import { doc, getDoc, updateDoc, setDoc } from 'firebase/firestore';
-import { db } from '../firebase';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { db, storage } from '../firebase';
 import Navigation from '../components/Navigation';
 
 const CompanyProfile = () => {
@@ -27,6 +28,7 @@ const CompanyProfile = () => {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [uploadingLogo, setUploadingLogo] = useState(false);
   
   // Fetch company profile from Firestore
   useEffect(() => {
@@ -235,41 +237,97 @@ const CompanyProfile = () => {
               marginBottom: '30px'
             }}>
               <div style={{ display: 'flex', alignItems: 'center', marginBottom: '30px' }}>
-                {profile.companyLogo ? (
-                  <img 
-                    src={profile.companyLogo} 
-                    alt="Company Logo"
-                    style={{ 
-                      width: '100px',
-                      height: '100px',
-                      borderRadius: '50%',
-                      objectFit: 'cover',
-                      marginRight: '20px'
-                    }}
-                  />
-                ) : (
-                  <div style={{ 
-                    width: '100px',
-                    height: '100px',
-                    borderRadius: '50%',
-                    backgroundColor: '#627eea', // Blue color for company
-                    color: 'white',
-                    display: 'flex',
-                    justifyContent: 'center',
-                    alignItems: 'center',
-                    fontSize: '36px',
-                    marginRight: '20px',
-                    fontWeight: 'bold'
-                  }}>
-                    {profile.companyName ? profile.companyName.charAt(0).toUpperCase() : 'C'}
-                  </div>
-                )}
+                <div style={{ position: 'relative' }}>
+                  {profile.companyLogo ? (
+                    <img 
+                      src={profile.companyLogo} 
+                      alt={profile.companyName}
+                      style={{ 
+                        width: '100px', 
+                        height: '100px', 
+                        borderRadius: '12px', 
+                        objectFit: 'cover',
+                        border: '1px solid #f0f0f0'
+                      }}
+                    />
+                  ) : (
+                    <div style={{ 
+                      width: '100px', 
+                      height: '100px', 
+                      borderRadius: '12px', 
+                      backgroundColor: 'var(--secondary)',
+                      color: 'white',
+                      display: 'flex',
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                      fontSize: '36px',
+                      fontWeight: 'bold'
+                    }}>
+                      {profile.companyName ? profile.companyName.charAt(0).toUpperCase() : 'C'}
+                    </div>
+                  )}
+                  
+                  {isEditing && (
+                    <label 
+                      htmlFor="logo-upload"
+                      style={{ 
+                        position: 'absolute',
+                        bottom: '-5px',
+                        right: '-5px',
+                        background: 'var(--primary)',
+                        color: 'white',
+                        width: '32px',
+                        height: '32px',
+                        borderRadius: '50%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        cursor: 'pointer',
+                        border: '2px solid white',
+                        fontSize: '16px'
+                      }}
+                    >
+                      📷
+                      <input
+                        id="logo-upload"
+                        type="file"
+                        accept="image/*"
+                        onChange={async (e) => {
+                          const file = e.target.files[0];
+                          if (file) {
+                            setUploadingLogo(true);
+                            try {
+                              const logoRef = ref(storage, `companyLogos/${currentUser.uid}`);
+                              await uploadBytes(logoRef, file);
+                              const companyLogo = await getDownloadURL(logoRef);
+                              
+                              await updateDoc(doc(db, 'companyProfiles', currentUser.uid), {
+                                companyLogo
+                              });
+                              
+                              setProfile(prev => ({ ...prev, companyLogo }));
+                              setSuccess('Company logo updated successfully!');
+                            } catch (error) {
+                              setError('Failed to upload logo: ' + error.message);
+                            } finally {
+                              setUploadingLogo(false);
+                            }
+                          }
+                        }}
+                        style={{ display: 'none' }}
+                      />
+                    </label>
+                  )}
+                </div>
                 
-                <div>
-                  <h3 style={{ marginBottom: '5px' }}>Company Profile</h3>
-                  <p style={{ color: '#666', fontSize: '14px' }}>
-                    Last updated: {formatDate(profile.lastUpdated || new Date().toISOString())}
-                  </p>
+                <div style={{ flex: '1' }}>
+                  <h4 style={{ margin: '0 0 5px 0' }}>{profile.companyName || 'Company Name'}</h4>
+                  <p style={{ color: '#666', margin: 0 }}>{profile.email}</p>
+                  {uploadingLogo && (
+                    <p style={{ color: 'var(--primary)', fontSize: '14px', marginTop: '10px' }}>
+                      Uploading logo...
+                    </p>
+                  )}
                 </div>
               </div>
               

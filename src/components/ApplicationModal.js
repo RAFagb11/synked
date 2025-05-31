@@ -97,7 +97,13 @@ const ApplicationModal = ({ application, isOpen, onClose, onUpdate }) => {
           <h3>Application Details</h3>
           <div style={{ background: '#f8fafc', padding: '15px', borderRadius: '8px', marginTop: '10px' }}>
             <p><strong>Project:</strong> {application.projectTitle}</p>
-            <p><strong>Applied on:</strong> {new Date(application.appliedAt).toLocaleDateString()}</p>
+            <p><strong>Applied on:</strong> {application.appliedAt ? 
+              new Date(application.appliedAt.seconds ? application.appliedAt.seconds * 1000 : application.appliedAt).toLocaleDateString('en-US', { 
+                month: 'short', 
+                day: 'numeric', 
+                year: 'numeric' 
+              }) : 'Recently'
+            }</p>
             <p><strong>Cover Letter:</strong></p>
             <p style={{ whiteSpace: 'pre-wrap', marginTop: '5px' }}>{application.coverLetter}</p>
             
@@ -107,8 +113,6 @@ const ApplicationModal = ({ application, isOpen, onClose, onUpdate }) => {
                 <p style={{ whiteSpace: 'pre-wrap', marginTop: '5px' }}>{application.applicationAnswer}</p>
               </>
             )}
-            
-            <p style={{ marginTop: '15px' }}><strong>Availability:</strong> {application.availability}</p>
           </div>
         </div>
 

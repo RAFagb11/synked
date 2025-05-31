@@ -133,6 +133,11 @@ const StudentDashboard = () => {
           background: 'rgba(239, 68, 68, 0.1)', 
           color: 'var(--danger)' 
         };
+      case 'withdrawn':
+        return { 
+          background: 'rgba(156, 163, 175, 0.1)', 
+          color: '#6b7280' 
+        };
       default:
         return {};
     }
@@ -145,6 +150,37 @@ const StudentDashboard = () => {
     // Navigate to the actual active project
     if (activeProject) {
       navigate(`/student/project/${activeProject.id}`);
+    }
+  };
+  
+  const handleWithdrawApplication = async (application) => {
+    if (window.confirm('Are you sure you want to withdraw this application? This action cannot be undone.')) {
+      try {
+        await updateDoc(doc(db, 'applications', application.id), {
+          status: 'withdrawn',
+          withdrawnAt: new Date().toISOString()
+        });
+        
+        // Refresh applications
+        const applicationsQuery = query(
+          collection(db, 'applications'),
+          where('studentId', '==', currentUser.uid),
+          orderBy('appliedAt', 'desc')
+        );
+        
+        const applicationsSnapshot = await getDocs(applicationsQuery);
+        const applicationsData = applicationsSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        
+        setApplications(applicationsData);
+        
+        alert('Application withdrawn successfully.');
+      } catch (error) {
+        console.error('Error withdrawing application:', error);
+        alert('Failed to withdraw application. Please try again.');
+      }
     }
   };
   
@@ -275,24 +311,61 @@ const StudentDashboard = () => {
                     </div>
                     
                     {currentApplication.status === 'pending' && (
-                      <p style={{ color: '#666', fontSize: '14px', marginBottom: '15px' }}>
-                        Your application is being reviewed. You'll be notified once a decision is made.
-                      </p>
+                      <>
+                        <p style={{ color: '#666', fontSize: '14px', marginBottom: '15px' }}>
+                          Your application is being reviewed. You'll be notified once a decision is made.
+                        </p>
+                        <div style={{ display: 'flex', gap: '15px' }}>
+                          <Link 
+                            to={`/projects/${currentApplication.projectId}`} 
+                            className="btn btn-outline"
+                            style={{ textDecoration: 'none' }}
+                          >
+                            View Project Details
+                          </Link>
+                          <button
+                            onClick={() => handleWithdrawApplication(currentApplication)}
+                            className="btn btn-outline"
+                            style={{ 
+                              color: 'var(--danger)', 
+                              borderColor: 'var(--danger)' 
+                            }}
+                          >
+                            Withdraw Application
+                          </button>
+                        </div>
+                      </>
                     )}
                     
                     {currentApplication.status === 'rejected' && (
-                      <p style={{ color: '#666', fontSize: '14px', marginBottom: '15px' }}>
-                        Unfortunately, your application was not selected. You can apply to other projects.
-                      </p>
+                      <>
+                        <p style={{ color: '#666', fontSize: '14px', marginBottom: '15px' }}>
+                          Unfortunately, your application was not selected. You can apply to other projects.
+                        </p>
+                        <Link 
+                          to={`/projects/${currentApplication.projectId}`} 
+                          className="btn btn-outline"
+                          style={{ textDecoration: 'none' }}
+                        >
+                          View Project Details
+                        </Link>
+                      </>
                     )}
                     
-                    <Link 
-                      to={`/projects/${currentApplication.projectId}`} 
-                      className="btn btn-outline"
-                      style={{ textDecoration: 'none' }}
-                    >
-                      View Project Details
-                    </Link>
+                    {currentApplication.status === 'withdrawn' && (
+                      <>
+                        <p style={{ color: '#666', fontSize: '14px', marginBottom: '15px' }}>
+                          You withdrew this application. You can apply to other projects.
+                        </p>
+                        <Link 
+                          to="/projects" 
+                          className="btn btn-primary"
+                          style={{ textDecoration: 'none' }}
+                        >
+                          Browse Projects
+                        </Link>
+                      </>
+                    )}
                   </div>
                 </div>
               ) : (
@@ -364,16 +437,34 @@ const StudentDashboard = () => {
                           {application.status}
                         </span>
                         
-                        <Link 
-                          to={`/projects/${application.projectId}`}
-                          style={{ 
-                            color: 'var(--primary)', 
-                            textDecoration: 'none',
-                            fontSize: '14px'
-                          }}
-                        >
-                          View Project
-                        </Link>
+                        <div style={{ display: 'flex', gap: '10px' }}>
+                          <Link 
+                            to={`/projects/${application.projectId}`}
+                            style={{ 
+                              color: 'var(--primary)', 
+                              textDecoration: 'none',
+                              fontSize: '14px'
+                            }}
+                          >
+                            View Project
+                          </Link>
+                          
+                          {application.status === 'pending' && (
+                            <button
+                              onClick={() => handleWithdrawApplication(application)}
+                              style={{
+                                background: 'none',
+                                border: 'none',
+                                color: 'var(--danger)',
+                                cursor: 'pointer',
+                                fontSize: '14px',
+                                padding: 0
+                              }}
+                            >
+                              Withdraw
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   ))}

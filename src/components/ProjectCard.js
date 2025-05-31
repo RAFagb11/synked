@@ -35,95 +35,173 @@ const ProjectCard = ({ project }) => {
   }, [project.companyId, project.id]);
 
   return (
-    <div className="feature-card">
-      <div className="feature-badge">{project.category}</div>
-      <h3>{project.title}</h3>
-      <p>{project.description.slice(0, 150)}...</p>
+    <div style={{
+      background: 'white',
+      borderRadius: '16px',
+      padding: '32px',
+      boxShadow: '0 5px 15px rgba(0,0,0,0.05)',
+      border: '1px solid #e5e7eb',
+      transition: 'all 0.2s ease',
+      display: 'flex',
+      flexDirection: 'column',
+      height: '100%',
+      minHeight: '420px'
+    }}>
+      {/* Category Badge */}
+      <div style={{ marginBottom: '16px' }}>
+        <span className="feature-badge">{project.category}</span>
+      </div>
       
-      {/* Company Information Section */}
-      {loading ? (
-        <div style={{ margin: '15px 0', color: '#666' }}>Loading company info...</div>
-      ) : company ? (
-        <div style={{ margin: '15px 0', padding: '10px', background: '#f8fafc', borderRadius: '8px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div style={{ 
-              width: '30px',
-              height: '30px',
-              borderRadius: '50%',
-              background: company.companyLogo ? 'transparent' : 'var(--secondary)',
-              color: 'white',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: '14px',
-              overflow: 'hidden'
-            }}>
-              {company.companyLogo ? (
-                <img 
-                  src={company.companyLogo} 
-                  alt={company.companyName || 'Company logo'} 
-                  style={{ 
-                    width: '100%', 
-                    height: '100%', 
-                    objectFit: 'cover' 
-                  }}
-                  onError={(e) => {
-                    // Fallback to letter if image fails to load
-                    e.target.style.display = 'none';
-                    e.target.parentNode.style.background = 'var(--secondary)';
-                    e.target.parentNode.innerHTML = company.companyName ? company.companyName.charAt(0) : 'C';
-                  }}
-                />
-              ) : (
-                company.companyName ? company.companyName.charAt(0) : 'C'
-              )}
-            </div>
-            <div>
-              <div style={{ fontWeight: '500', fontSize: '14px' }}>{company.companyName || 'Company'}</div>
-              <div style={{ fontSize: '12px', color: '#666' }}>{company.industry || 'Industry'}</div>
+      {/* Title - Fixed Height */}
+      <h3 style={{ 
+        marginBottom: '16px',
+        fontSize: '20px',
+        fontWeight: '600',
+        color: '#111827',
+        lineHeight: '1.4',
+        minHeight: '56px',
+        display: '-webkit-box',
+        WebkitLineClamp: 2,
+        WebkitBoxOrient: 'vertical',
+        overflow: 'hidden'
+      }}>
+        {project.title}
+      </h3>
+      
+      {/* Description - Fixed Height */}
+      <p style={{ 
+        marginBottom: '20px',
+        color: '#6b7280',
+        fontSize: '15px',
+        lineHeight: '1.6',
+        minHeight: '72px',
+        maxHeight: '72px',
+        overflow: 'hidden',
+        display: '-webkit-box',
+        WebkitLineClamp: 3,
+        WebkitBoxOrient: 'vertical'
+      }}>
+        {project.description}
+      </p>
+      
+      {/* Company Information Section - Fixed Height */}
+      <div style={{ marginBottom: '20px', minHeight: '70px' }}>
+        {loading ? (
+          <div style={{ 
+            padding: '16px', 
+            background: '#f9fafb', 
+            borderRadius: '12px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: '#9ca3af',
+            fontSize: '14px',
+            height: '70px'
+          }}>
+            Loading company...
+          </div>
+        ) : (
+          <div style={{ 
+            padding: '16px', 
+            background: '#f9fafb', 
+            borderRadius: '12px',
+            height: '70px',
+            display: 'flex',
+            alignItems: 'center'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div style={{ 
+                width: '40px',
+                height: '40px',
+                borderRadius: '50%',
+                background: company?.companyLogo ? 'transparent' : 'var(--secondary)',
+                color: 'white',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '16px',
+                fontWeight: '500',
+                overflow: 'hidden',
+                flexShrink: 0
+              }}>
+                {company?.companyLogo ? (
+                  <img 
+                    src={company.companyLogo} 
+                    alt={company.companyName || 'Company logo'} 
+                    style={{ 
+                      width: '100%', 
+                      height: '100%', 
+                      objectFit: 'cover' 
+                    }}
+                    onError={(e) => {
+                      e.target.style.display = 'none';
+                      e.target.parentNode.style.background = 'var(--secondary)';
+                      e.target.parentNode.innerHTML = company?.companyName ? company.companyName.charAt(0) : 'C';
+                    }}
+                  />
+                ) : (
+                  (company?.companyName || project.companyName || 'Company').charAt(0)
+                )}
+              </div>
+              <div>
+                <div style={{ fontWeight: '500', fontSize: '15px', color: '#111827' }}>
+                  {company?.companyName || project.companyName || 'Company'}
+                </div>
+                <div style={{ fontSize: '13px', color: '#6b7280' }}>
+                  {company?.industry || 'Technology'}
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-      ) : (
-        // Fallback when company profile is missing
-        <div style={{ margin: '15px 0', padding: '10px', background: '#f8fafc', borderRadius: '8px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div style={{ 
-              width: '30px',
-              height: '30px',
-              borderRadius: '50%',
-              background: 'var(--secondary)',
-              color: 'white',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: '14px'
-            }}>
-              C
-            </div>
-            <div>
-              <div style={{ fontWeight: '500', fontSize: '14px' }}>Company</div>
-              <div style={{ fontSize: '12px', color: '#666' }}>Industry</div>
-            </div>
-          </div>
-        </div>
-      )}
+        )}
+      </div>
       
-      <div style={{ marginTop: '15px' }}>
-        <span className="feature-badge" style={{ marginRight: '10px' }}>
+      {/* Spacer to push content to bottom */}
+      <div style={{ flex: 1 }}></div>
+      
+      {/* Project Details */}
+      <div style={{ 
+        display: 'flex', 
+        gap: '8px',
+        flexWrap: 'wrap',
+        marginBottom: '24px'
+      }}>
+        <span className="feature-badge" style={{ 
+          padding: '6px 12px',
+          fontSize: '13px'
+        }}>
           {project.duration}
         </span>
         <span className="feature-badge" style={{ 
-          backgroundColor: project.status === 'open' ? 'rgba(34, 197, 94, 0.1)' : 'rgba(251, 191, 36, 0.1)',
-          color: project.status === 'open' ? 'var(--success)' : 'var(--warning)'
+          backgroundColor: project.status === 'open' ? 'rgba(34, 197, 94, 0.1)' : 'rgba(156, 163, 175, 0.1)',
+          color: project.status === 'open' ? 'var(--success)' : '#6b7280',
+          padding: '6px 12px',
+          fontSize: '13px'
         }}>
-          {project.status === 'open' ? 'Active' : 'Closed'}
+          {project.status === 'open' ? 'Open' : 'Closed'}
         </span>
-        <span className="feature-badge">
-          {project.compensation ? `$${project.compensation}` : 'Experience Only'}
+        <span className="feature-badge" style={{
+          padding: '6px 12px',
+          fontSize: '13px'
+        }}>
+          {project.isExperienceOnly ? 'Experience Only' : `$${project.compensation || 0}`}
         </span>
       </div>
-      <Link to={`/projects/${project.id}`} className="btn btn-outline" style={{ marginTop: '20px' }}>
+      
+      {/* View Details Button */}
+      <Link 
+        to={`/projects/${project.id}`} 
+        className="btn btn-primary" 
+        style={{ 
+          width: '100%',
+          padding: '12px 20px',
+          textAlign: 'center',
+          textDecoration: 'none',
+          borderRadius: '8px',
+          fontSize: '15px',
+          fontWeight: '500'
+        }}
+      >
         View Details
       </Link>
     </div>

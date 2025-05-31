@@ -2,7 +2,8 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { AuthContext } from '../contexts/AuthContext';
 import { doc, getDoc, updateDoc, setDoc } from 'firebase/firestore';
-import { db } from '../firebase';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { db, storage } from '../firebase';
 import Navigation from '../components/Navigation';
 
 const StudentProfile = () => {
@@ -29,6 +30,7 @@ const StudentProfile = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [skillInput, setSkillInput] = useState('');
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
   
   useEffect(() => {
     const fetchProfile = async () => {
@@ -254,42 +256,103 @@ const StudentProfile = () => {
               boxShadow: '0 5px 15px rgba(0,0,0,0.05)',
               marginBottom: '30px'
             }}>
-              <div style={{ display: 'flex', alignItems: 'center', marginBottom: '30px' }}>
-                {profile.photoURL ? (
-                  <img 
-                    src={profile.photoURL} 
-                    alt="Profile"
-                    style={{ 
-                      width: '100px',
-                      height: '100px',
-                      borderRadius: '50%',
-                      objectFit: 'cover',
-                      marginRight: '20px'
-                    }}
-                  />
-                ) : (
-                  <div style={{ 
-                    width: '100px',
-                    height: '100px',
-                    borderRadius: '50%',
-                    backgroundColor: '#f47b7b', // Light pink/red
-                    color: 'white',
-                    display: 'flex',
-                    justifyContent: 'center',
-                    alignItems: 'center',
-                    fontSize: '36px',
-                    marginRight: '20px',
-                    fontWeight: 'bold'
-                  }}>
-                    {profile.fullName ? profile.fullName.charAt(0).toUpperCase() : 'S'}
-                  </div>
-                )}
+              <div style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                marginBottom: '30px',
+                gap: '20px'
+              }}>
+                <div style={{ position: 'relative' }}>
+                  {profile.photoURL ? (
+                    <img 
+                      src={profile.photoURL} 
+                      alt={profile.fullName}
+                      style={{ 
+                        width: '100px', 
+                        height: '100px', 
+                        borderRadius: '50%', 
+                        objectFit: 'cover',
+                        border: '3px solid #f0f0f0'
+                      }}
+                    />
+                  ) : (
+                    <div style={{ 
+                      width: '100px', 
+                      height: '100px', 
+                      borderRadius: '50%', 
+                      backgroundColor: 'var(--primary)',
+                      color: 'white',
+                      display: 'flex',
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                      fontSize: '36px',
+                      fontWeight: 'bold'
+                    }}>
+                      {profile.fullName ? profile.fullName.charAt(0).toUpperCase() : 'S'}
+                    </div>
+                  )}
+                  
+                  {isEditing && (
+                    <label 
+                      htmlFor="photo-upload"
+                      style={{ 
+                        position: 'absolute',
+                        bottom: '0',
+                        right: '0',
+                        background: 'var(--primary)',
+                        color: 'white',
+                        width: '32px',
+                        height: '32px',
+                        borderRadius: '50%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        cursor: 'pointer',
+                        border: '2px solid white',
+                        fontSize: '16px'
+                      }}
+                    >
+                      📷
+                      <input
+                        id="photo-upload"
+                        type="file"
+                        accept="image/*"
+                        onChange={async (e) => {
+                          const file = e.target.files[0];
+                          if (file) {
+                            setUploadingPhoto(true);
+                            try {
+                              const photoRef = ref(storage, `profilePhotos/${currentUser.uid}`);
+                              await uploadBytes(photoRef, file);
+                              const photoURL = await getDownloadURL(photoRef);
+                              
+                              await updateDoc(doc(db, 'studentProfiles', currentUser.uid), {
+                                photoURL
+                              });
+                              
+                              setProfile(prev => ({ ...prev, photoURL }));
+                              setSuccess('Profile photo updated successfully!');
+                            } catch (error) {
+                              setError('Failed to upload photo: ' + error.message);
+                            } finally {
+                              setUploadingPhoto(false);
+                            }
+                          }
+                        }}
+                        style={{ display: 'none' }}
+                      />
+                    </label>
+                  )}
+                </div>
                 
-                <div>
-                  <h3 style={{ marginBottom: '5px' }}>My Profile</h3>
-                  <p style={{ color: '#666', fontSize: '14px' }}>
-                    Last updated: {formatDate(profile.lastUpdated || new Date().toISOString())}
-                  </p>
+                <div style={{ flex: '1' }}>
+                  <h4 style={{ margin: '0 0 5px 0' }}>{profile.fullName || 'Your Name'}</h4>
+                  <p style={{ color: '#666', margin: 0 }}>{profile.email}</p>
+                  {uploadingPhoto && (
+                    <p style={{ color: 'var(--primary)', fontSize: '14px', marginTop: '10px' }}>
+                      Uploading photo...
+                    </p>
+                  )}
                 </div>
               </div>
               

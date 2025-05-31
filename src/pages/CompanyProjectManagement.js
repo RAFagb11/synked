@@ -107,7 +107,9 @@ const CompanyProjectManagement = () => {
     const totalDeliverables = safeNumber(deliverables.length);
     if (totalDeliverables === 0) return 0;
     
-    const studentSubmissions = submissions.filter(submission => submission.studentId === studentId);
+    const studentSubmissions = submissions.filter(submission => 
+      submission.studentId === studentId
+    );
     const completedCount = studentSubmissions.filter(submission => 
       submission.status === 'approved'
     ).length;
@@ -128,6 +130,8 @@ const CompanyProjectManagement = () => {
         return 'warning';
       case 'rejected':
         return 'danger';
+      case 'withdrawn':
+        return 'secondary';
       default:
         return '';
     }
@@ -210,7 +214,7 @@ const CompanyProjectManagement = () => {
         const applicationsData = applicationsSnapshot.docs.map(doc => ({
           id: doc.id,
           ...doc.data()
-        }));
+        })).filter(app => app.status !== 'withdrawn');
         
         // Fetch student profiles for applications
         const applicationsWithProfiles = await Promise.all(
@@ -726,7 +730,7 @@ const CompanyProjectManagement = () => {
       const applicationsData = applicationsSnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
-      }));
+      })).filter(app => app.status !== 'withdrawn');
       
       const applicationsWithProfiles = await Promise.all(
         applicationsData.map(async (app) => {
@@ -830,7 +834,7 @@ const CompanyProjectManagement = () => {
       const applicationsData = applicationsSnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
-      }));
+      })).filter(app => app.status !== 'withdrawn');
       
       const applicationsWithProfiles = await Promise.all(
         applicationsData.map(async (app) => {
@@ -1520,73 +1524,130 @@ const CompanyProjectManagement = () => {
                     })}
                   </div>
                   
-                  <div style={{ background: 'white', padding: '25px', borderRadius: '16px', boxShadow: '0 10px 30px rgba(0,0,0,0.05)' }}>
+                  <div style={{ background: 'white', padding: '25px', borderRadius: '16px', boxShadow: '0 5px 15px rgba(0,0,0,0.05)' }}>
                     <h3 style={{ marginBottom: '20px' }}>Messages</h3>
                     
                     <div style={{ 
-                      maxHeight: '300px', 
+                      maxHeight: '400px', 
                       overflowY: 'auto', 
                       marginBottom: '20px',
-                      border: '1px solid #f1f5f9',
-                      borderRadius: '8px',
-                      padding: '15px'
+                      padding: '15px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '16px'
                     }}>
                       {messages.length === 0 ? (
-                        <p style={{ textAlign: 'center', color: '#666' }}>No messages yet. Start a conversation with the student.</p>
+                        <p style={{ textAlign: 'center', color: '#6b7280', fontSize: '14px' }}>
+                          No messages yet. Start a conversation with the student.
+                        </p>
                       ) : (
-                        messages.map(message => (
-                          <div 
-                            key={message.id} 
-                            style={{ 
-                              marginBottom: '15px',
-                              display: 'flex',
-                              flexDirection: 'column',
-                              alignItems: message.senderType === 'company' ? 'flex-end' : 'flex-start'
-                            }}
-                          >
-                            <div style={{ 
-                              background: message.senderType === 'company' ? 'var(--primary)' : '#f1f5f9',
-                              color: message.senderType === 'company' ? 'white' : 'var(--dark)',
-                              padding: '10px 15px',
-                              borderRadius: '12px',
-                              maxWidth: '80%'
-                            }}>
-                              {message.content}
+                        messages.map(message => {
+                          const isCompanyMessage = message.senderType === 'company';
+                          
+                          return (
+                            <div 
+                              key={message.id} 
+                              style={{ 
+                                display: 'flex',
+                                flexDirection: isCompanyMessage ? 'row-reverse' : 'row',
+                                alignItems: 'flex-start',
+                                gap: '12px'
+                              }}
+                            >
+                              {/* Profile Picture - Only show for student messages */}
+                              {!isCompanyMessage && (
+                                <div style={{
+                                  width: '36px',
+                                  height: '36px',
+                                  borderRadius: '50%',
+                                  overflow: 'hidden',
+                                  background: activeStudent?.photoURL ? 'none' : 'var(--primary)',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  fontSize: '16px',
+                                  fontWeight: '500',
+                                  color: activeStudent?.photoURL ? 'transparent' : 'white',
+                                  flexShrink: 0
+                                }}>
+                                  {activeStudent?.photoURL ? (
+                                    <img 
+                                      src={activeStudent.photoURL} 
+                                      alt={activeStudent?.fullName || 'Student'} 
+                                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                    />
+                                  ) : (
+                                    (activeStudent?.fullName || 'S').charAt(0).toUpperCase()
+                                  )}
+                                </div>
+                              )}
+                              
+                              <div style={{ maxWidth: '75%' }}>
+                                {/* Message Content */}
+                                <div style={{ 
+                                  background: isCompanyMessage ? 'var(--primary)' : '#f3f4f6',
+                                  color: isCompanyMessage ? 'white' : '#111827',
+                                  padding: '12px 16px',
+                                  borderRadius: '16px',
+                                  borderTopLeftRadius: !isCompanyMessage ? '4px' : '16px',
+                                  borderTopRightRadius: isCompanyMessage ? '4px' : '16px',
+                                  fontSize: '14px',
+                                  lineHeight: '1.5',
+                                  whiteSpace: 'pre-wrap',
+                                  wordBreak: 'break-word'
+                                }}>
+                                  {message.content}
+                                </div>
+                                
+                                {/* Timestamp */}
+                                <div style={{ 
+                                  fontSize: '12px', 
+                                  color: '#9ca3af',
+                                  marginTop: '4px',
+                                  textAlign: isCompanyMessage ? 'right' : 'left'
+                                }}>
+                                  {message.timestamp ? 
+                                    new Date(message.timestamp.seconds * 1000).toLocaleTimeString([], {
+                                      hour: '2-digit',
+                                      minute: '2-digit'
+                                    }) 
+                                    : 'Just now'
+                                  }
+                                </div>
+                              </div>
                             </div>
-                            <div style={{ 
-                              fontSize: '12px', 
-                              color: '#666',
-                              marginTop: '4px'
-                            }}>
-                              {message.timestamp ? formatDate(message.timestamp) + ' ' + new Date(message.timestamp.seconds * 1000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : 'Just now'}
-                            </div>
-                          </div>
-                        ))
+                          );
+                        })
                       )}
                     </div>
                     
-                    <form onSubmit={handleSubmitMessage}>
-                      <div style={{ display: 'flex', gap: '10px' }}>
-                        <input 
-                          type="text"
-                          value={newMessage}
-                          onChange={(e) => setNewMessage(e.target.value)}
-                          placeholder="Type a message to the student..."
-                          style={{ 
-                            flex: '1',
-                            padding: '12px',
-                            borderRadius: '8px',
-                            border: '1px solid #ddd'
-                          }}
-                        />
-                        <button 
-                          type="submit"
-                          className="btn btn-primary"
-                          disabled={!newMessage.trim()}
-                        >
-                          Send
-                        </button>
-                      </div>
+                    <form onSubmit={handleSubmitMessage} style={{ display: 'flex', gap: '12px' }}>
+                      <input 
+                        type="text"
+                        value={newMessage}
+                        onChange={(e) => setNewMessage(e.target.value)}
+                        placeholder="Type a message..."
+                        style={{ 
+                          flex: '1',
+                          padding: '12px 16px',
+                          borderRadius: '8px',
+                          border: '1px solid #e5e7eb',
+                          fontSize: '14px'
+                        }}
+                      />
+                      <button 
+                        type="submit"
+                        className="btn btn-primary"
+                        disabled={!newMessage.trim()}
+                        style={{
+                          padding: '12px 24px',
+                          borderRadius: '8px',
+                          fontSize: '14px',
+                          fontWeight: '500'
+                        }}
+                      >
+                        Send
+                      </button>
                     </form>
                   </div>
                 </>

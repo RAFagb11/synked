@@ -1,13 +1,14 @@
 // src/pages/CompanyDashboard.js
 import React, { useState, useEffect, useContext } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { AuthContext } from '../contexts/AuthContext';
-import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, getDoc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import Navigation from '../components/Navigation';
 
 const CompanyDashboard = () => {
   const { currentUser } = useContext(AuthContext);
+  const navigate = useNavigate();
   
   const [projects, setProjects] = useState([]);
   const [applications, setApplications] = useState([]);
@@ -15,6 +16,9 @@ const CompanyDashboard = () => {
   const [activeStudents, setActiveStudents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [showProjectOptions, setShowProjectOptions] = useState({}); // For dropdown menus
+  const [editingProject, setEditingProject] = useState(null); // For edit modal
+  const [editFormData, setEditFormData] = useState({});
   
   useEffect(() => {
     const fetchDashboardData = async () => {
@@ -53,7 +57,7 @@ const CompanyDashboard = () => {
           const applicationsData = applicationsSnapshot.docs.map(doc => ({
             id: doc.id,
             ...doc.data()
-          }));
+          })).filter(app => app.status !== 'withdrawn'); // Filter out withdrawn applications
           
           setApplications(applicationsData);
         }
@@ -119,6 +123,111 @@ const CompanyDashboard = () => {
     return { activeProjects, totalApplications, pendingApplications };
   };
   
+  const handleEditProject = (project) => {
+    setEditingProject(project);
+    setEditFormData({
+      title: project.title,
+      description: project.description,
+      compensation: project.compensation,
+      isExperienceOnly: project.isExperienceOnly
+    });
+    setShowProjectOptions({});
+  };
+  
+  const handleSaveEdit = async () => {
+    if (editingProject.hasBeenEdited) {
+      alert('This project has already been edited once and cannot be edited again.');
+      return;
+    }
+    
+    try {
+      await updateDoc(doc(db, 'projects', editingProject.id), {
+        ...editFormData,
+        hasBeenEdited: true,
+        lastEditedAt: new Date().toISOString()
+      });
+      
+      // Refresh projects
+      const projectsQuery = query(
+        collection(db, 'projects'),
+        where('companyId', '==', currentUser.uid)
+      );
+      const projectsSnapshot = await getDocs(projectsQuery);
+      const projectsData = projectsSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setProjects(projectsData);
+      
+      setEditingProject(null);
+      setEditFormData({});
+      alert('Project updated successfully!');
+    } catch (error) {
+      console.error('Error updating project:', error);
+      alert('Failed to update project. Please try again.');
+    }
+  };
+  
+  const handleToggleProjectStatus = async (project) => {
+    const newStatus = project.status === 'open' ? 'closed' : 'open';
+    const confirmMessage = project.status === 'open' 
+      ? 'Are you sure you want to close this project? Students will no longer be able to apply.'
+      : 'Are you sure you want to reopen this project?';
+      
+    if (window.confirm(confirmMessage)) {
+      try {
+        await updateDoc(doc(db, 'projects', project.id), {
+          status: newStatus,
+          lastStatusChangeAt: new Date().toISOString()
+        });
+        
+        // Refresh projects
+        const projectsQuery = query(
+          collection(db, 'projects'),
+          where('companyId', '==', currentUser.uid)
+        );
+        const projectsSnapshot = await getDocs(projectsQuery);
+        const projectsData = projectsSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        setProjects(projectsData);
+        
+        alert(`Project ${newStatus === 'open' ? 'opened' : 'closed'} successfully!`);
+      } catch (error) {
+        console.error('Error updating project status:', error);
+        alert('Failed to update project status. Please try again.');
+      }
+    }
+    setShowProjectOptions({});
+  };
+  
+  const handleDeleteProject = async (project) => {
+    if (window.confirm('Are you sure you want to delete this project? This action cannot be undone.')) {
+      try {
+        await deleteDoc(doc(db, 'projects', project.id));
+        
+        // Refresh projects
+        const projectsQuery = query(
+          collection(db, 'projects'),
+          where('companyId', '==', currentUser.uid)
+        );
+        const projectsSnapshot = await getDocs(projectsQuery);
+        const projectsData = projectsSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        setProjects(projectsData);
+        
+        alert('Project deleted successfully!');
+      } catch (error) {
+        console.error('Error deleting project:', error);
+        alert('Failed to delete project. Please try again.');
+      }
+    }
+    setShowProjectOptions({});
+  };
+  
   if (loading) {
     return (
       <>
@@ -162,17 +271,26 @@ const CompanyDashboard = () => {
             {/* Recent Projects */}
             <div style={{ 
               background: 'white', 
-              padding: '30px', 
+              padding: '40px', 
               borderRadius: '16px', 
               boxShadow: '0 5px 15px rgba(0,0,0,0.05)',
               marginBottom: '30px'
             }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                <h3>Your Projects</h3>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
+                <div>
+                  <h3 style={{ margin: '0 0 8px 0', fontSize: '24px', fontWeight: '600' }}>Your Projects</h3>
+                  <p style={{ margin: 0, color: '#6b7280', fontSize: '15px' }}>Manage your active projects and review applications</p>
+                </div>
                 <Link 
                   to="/post-project" 
                   className="btn btn-outline"
-                  style={{ textDecoration: 'none' }}
+                  style={{ 
+                    textDecoration: 'none',
+                    padding: '12px 24px',
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    fontWeight: '500'
+                  }}
                 >
                   + New Project
                 </Link>
@@ -200,7 +318,7 @@ const CompanyDashboard = () => {
                   <Link to="/post-project" className="btn btn-primary">Create Project</Link>
                 </div>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                   {projects.slice(0, 5).map(project => {
                     const projectApplications = applications.filter(app => app.projectId === project.id);
                     const pendingCount = projectApplications.filter(app => app.status === 'pending').length;
@@ -209,70 +327,244 @@ const CompanyDashboard = () => {
                       <div 
                         key={project.id}
                         style={{ 
-                          padding: '20px',
-                          border: '1px solid #eee',
-                          borderRadius: '12px',
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center'
+                          padding: '28px',
+                          border: '1px solid #e5e7eb',
+                          borderRadius: '16px',
+                          background: 'white',
+                          transition: 'all 0.2s ease',
+                          cursor: 'pointer',
+                          ':hover': {
+                            boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
+                            borderColor: '#d1d5db'
+                          }
                         }}
                       >
-                        <div style={{ flex: '1' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
-                            <h5 style={{ margin: 0 }}>{project.title}</h5>
+                        <div style={{ marginBottom: '20px' }}>
+                          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '12px' }}>
+                            <h5 style={{ 
+                              margin: 0, 
+                              fontSize: '18px',
+                              fontWeight: '600',
+                              color: '#111827',
+                              lineHeight: '1.4'
+                            }}>
+                              {project.title}
+                            </h5>
                             <span style={{ 
                               background: project.status === 'open' ? 'rgba(34, 197, 94, 0.1)' : 'rgba(156, 163, 175, 0.1)',
                               color: project.status === 'open' ? 'var(--success)' : '#6b7280',
-                              padding: '4px 8px',
-                              borderRadius: '12px',
-                              fontSize: '12px'
+                              padding: '6px 12px',
+                              borderRadius: '20px',
+                              fontSize: '12px',
+                              fontWeight: '500',
+                              whiteSpace: 'nowrap'
                             }}>
                               {project.status === 'open' ? 'Open' : 'Closed'}
                             </span>
                           </div>
-                          <p style={{ color: '#666', fontSize: '14px', margin: '0 0 8px 0' }}>
-                            {project.description?.slice(0, 100)}...
+                          
+                          <p style={{ 
+                            color: '#6b7280', 
+                            fontSize: '14px', 
+                            margin: '0 0 16px 0',
+                            lineHeight: '1.5'
+                          }}>
+                            {project.description?.slice(0, 120)}...
                           </p>
-                          <div style={{ display: 'flex', gap: '15px', fontSize: '14px', color: '#666' }}>
-                            <span>Posted: {formatDate(project.createdAt)}</span>
-                            <span>Applications: {projectApplications.length}</span>
+                          
+                          <div style={{ 
+                            display: 'flex', 
+                            gap: '24px', 
+                            fontSize: '13px', 
+                            color: '#9ca3af',
+                            marginBottom: '20px'
+                          }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span style={{ fontSize: '16px' }}>📅</span>
+                              <span>Posted {formatDate(project.createdAt)}</span>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span style={{ fontSize: '16px' }}>📋</span>
+                              <span>{projectApplications.length} applications</span>
+                            </div>
                             {pendingCount > 0 && (
-                              <span style={{ color: 'var(--warning)', fontWeight: '500' }}>
-                                {pendingCount} pending
-                              </span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <span style={{ 
+                                  width: '8px',
+                                  height: '8px',
+                                  borderRadius: '50%',
+                                  background: 'var(--warning)',
+                                  display: 'inline-block'
+                                }}></span>
+                                <span style={{ color: 'var(--warning)', fontWeight: '500' }}>
+                                  {pendingCount} pending
+                                </span>
+                              </div>
                             )}
                           </div>
                         </div>
                         
-                        <div style={{ display: 'flex', gap: '10px' }}>
+                        <div style={{ 
+                          display: 'flex', 
+                          gap: '12px',
+                          paddingTop: '20px',
+                          borderTop: '1px solid #f3f4f6'
+                        }}>
                           <Link 
                             to={`/company/project/${project.id}`}
                             className="btn btn-outline"
-                            style={{ textDecoration: 'none', padding: '8px 16px' }}
+                            style={{ 
+                              textDecoration: 'none', 
+                              padding: '10px 20px',
+                              fontSize: '14px',
+                              borderColor: '#e5e7eb',
+                              color: '#374151'
+                            }}
                           >
-                            Manage
+                            Manage Project
                           </Link>
                           {projectApplications.length > 0 && (
                             <Link 
                               to={`/company/applications/${project.id}`}
                               className="btn btn-primary"
-                              style={{ textDecoration: 'none', padding: '8px 16px' }}
+                              style={{ 
+                                textDecoration: 'none', 
+                                padding: '10px 20px',
+                                fontSize: '14px'
+                              }}
                             >
-                              View Applications
+                              Review Applications ({projectApplications.length})
                             </Link>
                           )}
+                          
+                          {/* Project Options Menu */}
+                          <div style={{ position: 'relative', marginLeft: 'auto' }}>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setShowProjectOptions(prev => ({
+                                  ...prev,
+                                  [project.id]: !prev[project.id]
+                                }))
+                              }}
+                              style={{
+                                background: 'white',
+                                border: '1px solid #e5e7eb',
+                                borderRadius: '8px',
+                                padding: '8px',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                width: '40px',
+                                height: '40px',
+                                transition: 'all 0.2s ease'
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.background = '#f9fafb';
+                                e.currentTarget.style.borderColor = '#d1d5db';
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.background = 'white';
+                                e.currentTarget.style.borderColor = '#e5e7eb';
+                              }}
+                            >
+                              ⋮
+                            </button>
+                            
+                            {showProjectOptions[project.id] && (
+                              <div style={{
+                                position: 'absolute',
+                                top: '100%',
+                                right: 0,
+                                marginTop: '5px',
+                                background: 'white',
+                                border: '1px solid #eee',
+                                borderRadius: '8px',
+                                boxShadow: '0 5px 15px rgba(0,0,0,0.1)',
+                                minWidth: '150px',
+                                zIndex: 10
+                              }}>
+                                <button
+                                  onClick={() => handleEditProject(project)}
+                                  style={{
+                                    width: '100%',
+                                    padding: '10px 15px',
+                                    background: 'none',
+                                    border: 'none',
+                                    textAlign: 'left',
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '8px'
+                                  }}
+                                >
+                                  Edit
+                                </button>
+                                
+                                <button
+                                  onClick={() => handleToggleProjectStatus(project)}
+                                  style={{
+                                    width: '100%',
+                                    padding: '10px 15px',
+                                    background: 'none',
+                                    border: 'none',
+                                    textAlign: 'left',
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '8px'
+                                  }}
+                                >
+                                  {project.status === 'open' ? 'Close' : 'Open'} Project
+                                </button>
+                                
+                                <button
+                                  onClick={() => handleDeleteProject(project)}
+                                  style={{
+                                    width: '100%',
+                                    padding: '10px 15px',
+                                    background: 'none',
+                                    border: 'none',
+                                    textAlign: 'left',
+                                    cursor: 'pointer',
+                                    color: 'var(--danger)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '8px'
+                                  }}
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </div>
                     );
                   })}
                   
                   {projects.length > 5 && (
-                    <div style={{ textAlign: 'center', marginTop: '15px' }}>
+                    <div style={{ 
+                      textAlign: 'center', 
+                      marginTop: '32px',
+                      paddingTop: '24px',
+                      borderTop: '1px solid #f3f4f6'
+                    }}>
                       <Link 
                         to="/company/projects" 
-                        style={{ color: 'var(--primary)', textDecoration: 'none' }}
+                        style={{ 
+                          color: 'var(--primary)', 
+                          textDecoration: 'none',
+                          fontSize: '15px',
+                          fontWeight: '500',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '8px'
+                        }}
                       >
                         View All Projects ({projects.length})
+                        <span style={{ fontSize: '18px' }}>→</span>
                       </Link>
                     </div>
                   )}
@@ -472,6 +764,130 @@ const CompanyDashboard = () => {
           </div>
         </div>
       </div>
+      
+      {/* Edit Project Modal */}
+      {editingProject && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000
+        }}>
+          <div style={{
+            background: 'white',
+            borderRadius: '16px',
+            padding: '30px',
+            maxWidth: '600px',
+            width: '90%',
+            maxHeight: '80vh',
+            overflow: 'auto'
+          }}>
+            <h3 style={{ marginBottom: '20px' }}>Edit Project</h3>
+            
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              handleSaveEdit();
+            }}>
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>
+                  Project Title
+                </label>
+                <input
+                  type="text"
+                  value={editFormData.title || ''}
+                  onChange={(e) => setEditFormData(prev => ({ ...prev, title: e.target.value }))}
+                  style={{
+                    width: '100%',
+                    padding: '12px',
+                    border: '1px solid #ddd',
+                    borderRadius: '8px'
+                  }}
+                  required
+                />
+              </div>
+              
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>
+                  Description
+                </label>
+                <textarea
+                  value={editFormData.description || ''}
+                  onChange={(e) => setEditFormData(prev => ({ ...prev, description: e.target.value }))}
+                  style={{
+                    width: '100%',
+                    padding: '12px',
+                    border: '1px solid #ddd',
+                    borderRadius: '8px',
+                    minHeight: '120px'
+                  }}
+                  required
+                />
+              </div>
+              
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>
+                  Compensation
+                </label>
+                <input
+                  type="number"
+                  value={editFormData.compensation || ''}
+                  onChange={(e) => setEditFormData(prev => ({ ...prev, compensation: e.target.value }))}
+                  style={{
+                    width: '100%',
+                    padding: '12px',
+                    border: '1px solid #ddd',
+                    borderRadius: '8px'
+                  }}
+                  disabled={editFormData.isExperienceOnly}
+                />
+                <label style={{ display: 'flex', alignItems: 'center', marginTop: '10px' }}>
+                  <input
+                    type="checkbox"
+                    checked={editFormData.isExperienceOnly || false}
+                    onChange={(e) => setEditFormData(prev => ({ 
+                      ...prev, 
+                      isExperienceOnly: e.target.checked,
+                      compensation: e.target.checked ? 0 : prev.compensation
+                    }))}
+                    style={{ marginRight: '8px' }}
+                  />
+                  Experience Only (No compensation)
+                </label>
+              </div>
+              
+              <div style={{ marginBottom: '10px', color: '#666', fontSize: '14px' }}>
+                Note: You can edit a project only once. Make sure all details are correct.
+              </div>
+              
+              <div style={{ display: 'flex', gap: '15px', justifyContent: 'flex-end' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingProject(null);
+                    setEditFormData({});
+                  }}
+                  className="btn btn-outline"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={editingProject.hasBeenEdited}
+                >
+                  {editingProject.hasBeenEdited ? 'Already Edited' : 'Save Changes'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </>
   );
 };
